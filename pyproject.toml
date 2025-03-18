@@ -1,0 +1,48 @@
+[project]
+name = "pauliobf"
+version = "0.0.1"
+authors = [{ name = "NeverLocal" }]
+description = "Quantum circuit obfuscation based on Pauli gadgets."
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = ["numpy>=2.1", "neverlocal-euler>=1.0.2"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.10",
+    "Natural Language :: English",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Documentation = "https://pauliobf.readthedocs.io"
+Repository = "https://github.com/neverlocal/pauliobf"
+Issues = "https://github.com/neverlocal/pauliobf/issues"
+
+[build-system]
+requires = [
+    "setuptools>=63.4.3", # see https://github.com/python/mypy/issues/13392#issuecomment-1212727421
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["pauliobf", "pauliobf.*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+pauliobf = ["README.md", "LICENSE"]
+
+[tool.black]
+target-version = ["py313"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+
+[dependency-groups]
+dev = ["pytest>=8.0"]

@@ -1,12 +1,23 @@
 """Low-level implementation of Pauli circuit operations."""
 
 from __future__ import annotations
-from typing import Final, Literal, TypeAlias
+from collections.abc import Callable
+from typing import Final, Literal, ParamSpec, TypeAlias, TypeVar
 import numpy as np
 import numba # type: ignore
 
-numba_jit = numba.jit(nopython=True, cache=True)
+_numba_jit = numba.jit(nopython=True, cache=True)
 """Decorator to apply :func:`numba.jit` with desired settings."""
+
+_P = ParamSpec("_P")
+"""Type alias for a generic parameter list."""
+
+_R = TypeVar("_R")
+"""Type alias for a generic return type."""
+
+def numba_jit(func: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Decorator to apply :func:`numba.jit` with desired settings."""
+    return _numba_jit(func) # type: ignore
 
 UInt8Array1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.uint8]]
 """Type alias for 1D UInt8 NumPy arrays."""
@@ -127,12 +138,12 @@ def gadget_legs(g: GadgetData) -> UInt8Array1D:
         & np.tile(_LEG_BYTE_MASKS << _LEG_BYTE_SHIFTS, n)
     ) >> np.tile(_LEG_BYTE_SHIFTS, n)
 
-@numba_jit # type: ignore
+@numba_jit
 def phase2rad(phase: Phase) -> float:
     """Converts a phase (as an integer) to radians."""
     return np.pi*phase/PHASE_DENOM
 
-@numba_jit # type: ignore
+@numba_jit
 def rad2phase(phase_f: float) -> Phase:
     """Converts radians to a phase (as an integer)."""
     return int(np.round(phase_f*PHASE_DENOM/np.pi))%PHASE_DENOM
@@ -141,12 +152,12 @@ assert PHASE_NBYTES == 2, (
     "Functions below are implemented under the assumption of 16-bit phases."
 )
 
-@numba_jit # type: ignore
+@numba_jit
 def get_phase(g: GadgetData) -> Phase:
     """Extracts phase data from the given gadget data."""
     return int(g[-2])*256+int(g[-1])
 
-@numba_jit # type: ignore
+@numba_jit
 def set_phase(g: GadgetData, phase: Phase) -> None:
     """Sets phase data in the given gadget data."""
     g[-2], g[-1] = divmod(phase, 256)

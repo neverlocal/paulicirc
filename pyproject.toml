@@ -5,7 +5,12 @@ authors = [{ name = "NeverLocal" }]
 description = "Quantum circuit obfuscation based on Pauli gadgets."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
-dependencies = ["numpy>=2.1", "numba>=0.61", "neverlocal-euler>=1.0.2"]
+dependencies = [
+    "numpy>=2.1",
+    "numba>=0.61",
+    "euler>=1.0.2.post0",
+    "typing-validation>=1.2.12",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",

@@ -22,6 +22,7 @@ from ._numpy import (
     UInt16Array1D,
     UInt8Array1D,
     UInt8Array2D,
+    interleave,
     numba_jit,
 )
 
@@ -521,6 +522,18 @@ class Circuit:
         data = _rand_circ(num_gadgets, num_qubits, rng=rng)
         return cls(data)
 
+    @classmethod
+    def random_inverse_pairs(
+        cls, num_pairs: int, num_qubits: int, *, rng: int | RNG | None = None
+    ) -> Self:
+        """Constructs a circuit consisting of inverse pairs of random gadgets."""
+        gadgets = Circuit.random(num_pairs, num_qubits, rng=rng)
+        circ = Circuit.zero(2 * num_pairs, num_qubits)
+        circ[::2] = gadgets
+        gadgets.invert_phases()
+        circ[1::2] = gadgets
+        return circ
+
     _data: CircuitData
     _num_qubits: int
 
@@ -571,6 +584,49 @@ class Circuit:
     def invert_phases(self) -> None:
         """Inverts phases inplace, keeping gadget order unchanged."""
         _invert_phases(self._data[:, -PHASE_NBYTES:])
+
+    def interleaved(
+        self,
+        other: Circuit,
+        self_step: int,
+        other_step: int,
+        other_start: int = 0,
+    ) -> Self:
+        """
+        Interleaves this circuit with the other given circuit, using the given steps.
+        If ``other_start`` is specified, the first ``other_start`` gadgets of the
+        ``other`` circuit are taken at the start of the interleaving.
+        """
+        assert self._validate_interleave_args(other, self_step, other_step, other_start)
+        data = interleave(
+            self._data,
+            other._data,
+            self_step,
+            other_step,
+            other_start,
+        )
+        return Circuit(data, self._num_qubits)
+
+    def _validate_interleave_args(
+        self,
+        other: Circuit,
+        self_step: int,
+        other_step: int,
+        other_start: int = 0,
+    ) -> Literal[True]:
+        """Validates the arguments to the :meth:`interleaved` method."""
+        validate(other, Circuit)
+        validate(self_step, int)
+        validate(other_step, int)
+        if self.num_qubits != other.num_qubits:
+            raise ValueError("Mismatch in number of qubits.")
+        if not 0 < self_step <= self.num_gadgets:
+            raise ValueError(f"Invalid {self_step = }")
+        if not 0 < other_step <= other.num_gadgets:
+            raise ValueError(f"Invalid {other_step = }")
+        if not 0 <= other_start < other.num_gadgets:
+            raise ValueError(f"Invalid {other_start = }")
+        return True
 
     def iter_gadgets(self, *, fast: bool = False) -> Iterable[Gadget]:
         """
@@ -641,9 +697,7 @@ class Circuit:
     @overload
     def __setitem__(self, idx: SupportsIndex, value: Gadget) -> None: ...
     @overload
-    def __setitem__(
-        self, idx: slice | list[SupportsIndex], value: Circuit
-    ) -> None: ...
+    def __setitem__(self, idx: slice | list[SupportsIndex], value: Circuit) -> None: ...
     def __setitem__(
         self,
         idx: SupportsIndex | slice | list[SupportsIndex],

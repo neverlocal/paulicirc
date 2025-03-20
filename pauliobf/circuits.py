@@ -206,6 +206,21 @@ def _invert_phases(phases: PhaseDataArray) -> None:
     )
 
 
+@numba_jit
+def _overlap(p: GadgetData, q: GadgetData) -> int:
+    """Gadget overlap."""
+    p = p[:-PHASE_NBYTES]
+    q = q[:-PHASE_NBYTES]
+    parity = np.zeros(len(p), dtype=np.uint8)
+    mask = 0b00000011
+    for _ in range(4):
+        _p = p&mask
+        _q = q&mask
+        parity += (_p!=0)&(_q!=0)&(_p!=_q)
+        mask <<= 2
+    return int(np.sum(parity))
+
+
 @final
 class Gadget:
     """A Pauli gadget."""
@@ -310,6 +325,15 @@ class Gadget:
         """Creates a persistent copy of the gadget."""
         return Gadget(self._data.copy(), self._num_qubits)
 
+    def overlap(self, other: Gadget) -> int:
+        """
+        Returns the overlap between the legs of this gadgets and those of the given
+        gadget, computed as the number of qubits where the legs of the two gadgets
+        differ and are both not the identity Pauli (the value 0, as a :obj:`Pauli`).
+        """
+        assert self._validate_same_num_qubits(other)
+        return _overlap(self._data, other._data)
+
     def __repr__(self) -> str:
         legs_str = self.leg_paulistr
         if len(legs_str) > 16:
@@ -338,6 +362,12 @@ class Gadget:
                 raise ValueError("Number of legs does not match number of qubits.")
             if not all(0 <= leg < 4 for leg in legs):
                 raise ValueError("Legs must have value in range(4).")
+            return True
+
+        def _validate_same_num_qubits(self, gadget: Gadget) -> Literal[True]:
+            validate(gadget, Gadget)
+            if self.num_qubits != gadget.num_qubits:
+                raise ValueError("Mismatch in number of qubits between gadgets.")
             return True
 
 

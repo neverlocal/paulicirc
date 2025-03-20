@@ -188,13 +188,13 @@ def _set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
 @numba_jit
 def _phase2float(phase: Phase) -> float:
     """Converts a phase (as an int) to radians (as a float)."""
-    return np.pi * phase / PHASE_DENOM
+    return 2 * np.pi * phase / PHASE_DENOM
 
 
 @numba_jit
 def _float2phase(phase_f: float) -> Phase:
     """Converts radians (as a float) to a phase (as an int)."""
-    return int(np.round(phase_f * PHASE_DENOM / np.pi)) % PHASE_DENOM
+    return int(np.round(phase_f * PHASE_DENOM * 0.5 / np.pi)) % PHASE_DENOM
 
 
 assert (

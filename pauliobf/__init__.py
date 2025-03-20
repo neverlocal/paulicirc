@@ -2,6 +2,6 @@
 
 __version__ = "0.0.1"
 
-from .circuits import Gadget, GadgetCircuit
+from .circuits import Gadget, Circuit
 
-__all__ = ("Gadget", "GadgetCircuit")
+__all__ = ("Gadget", "Circuit")

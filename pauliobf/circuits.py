@@ -58,7 +58,7 @@ The phase is stored as a 16-bit integer, with the most significant byte first;
 see :obj:`Phase`.
 """
 
-GadgetCircData: TypeAlias = UInt8Array2D
+CircuitData: TypeAlias = UInt8Array2D
 """Type alias for data encoding a circuit of Pauli gadgets."""
 
 PhaseDataArray: TypeAlias = np.ndarray[tuple[int, Literal[2]], np.dtype[np.uint8]]
@@ -116,7 +116,7 @@ assert PHASE_NBYTES == PhaseDataArray.__args__[0].__args__[1].__args__[0]  # typ
 assert PhaseArray.__args__[1].__args__[0].__name__ == f"uint{8*PHASE_NBYTES}"  # type: ignore
 
 
-def _zero_circ(m: int, n: int) -> GadgetCircData:
+def _zero_circ(m: int, n: int) -> CircuitData:
     """
     Returns a circuit with ``m`` gadgets on ``n`` qubits,
     where all gadgets have no legs and zero phase.
@@ -127,7 +127,7 @@ def _zero_circ(m: int, n: int) -> GadgetCircData:
     return np.zeros((m, ncols), dtype=np.uint8)
 
 
-def _rand_circ(m: int, n: int, *, rng: RNG) -> GadgetCircData:
+def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
     """
     Returns a uniformly random circuit with ``m`` gadgets on ``n`` qubits,
     where all gadgets have no legs and zero phase.
@@ -289,7 +289,7 @@ def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     _set_phase(row[2 * n :], _c_phase)
 
 
-def _commute(circ: GadgetCircData, codes: CommutationCodeArray) -> GadgetCircData:
+def _commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     """
     Commutes subsequent gadget pairs in the circuit according to the given codes;
     see :func:`_aux_commute_pair`.
@@ -494,7 +494,7 @@ class Gadget:
 
 
 @final
-class GadgetCircuit:
+class Circuit:
     """A circuit of Pauli gadgets."""
 
     @classmethod
@@ -503,7 +503,7 @@ class GadgetCircuit:
         Constructs a circuit with the given number of gadgets and qubits,
         where all gadgets have no legs and zero phase.
         """
-        assert GadgetCircuit._validate_circ_shape(num_gadgets, num_qubits)
+        assert Circuit._validate_circ_shape(num_gadgets, num_qubits)
         data = _zero_circ(num_gadgets, num_qubits)
         return cls(data)
 
@@ -515,22 +515,22 @@ class GadgetCircuit:
         Constructs a circuit with the given number of gadgets and qubits,
         where all gadgets have random legs and random phase.
         """
-        assert GadgetCircuit._validate_circ_shape(num_gadgets, num_qubits)
+        assert Circuit._validate_circ_shape(num_gadgets, num_qubits)
         if not isinstance(rng, RNG):
             rng = np.random.default_rng(rng)
         data = _rand_circ(num_gadgets, num_qubits, rng=rng)
         return cls(data)
 
-    _data: GadgetCircData
+    _data: CircuitData
     _num_qubits: int
 
-    def __new__(cls, data: GadgetCircData, num_qubits: int | None = None) -> Self:
+    def __new__(cls, data: CircuitData, num_qubits: int | None = None) -> Self:
         """
         Constructs a gadget circuit from the given data.
 
         :meta public:
         """
-        assert GadgetCircuit._validate_new_args(data, num_qubits)
+        assert Circuit._validate_new_args(data, num_qubits)
         if num_qubits is None:
             num_qubits = (data.shape[1] - PHASE_NBYTES) * 4
         self = super().__new__(cls)
@@ -540,7 +540,7 @@ class GadgetCircuit:
 
     def clone(self) -> Self:
         """Creates a copy of the gadget circuit."""
-        return GadgetCircuit(self._data.copy(), self._num_qubits)
+        return Circuit(self._data.copy(), self._num_qubits)
 
     @property
     def num_gadgets(self) -> int:
@@ -610,7 +610,7 @@ class GadgetCircuit:
         """
         codes = np.asarray(codes, dtype=np.uint8)
         assert self._validate_commutation_codes(codes)
-        return GadgetCircuit(_commute(self._data, codes), self._num_qubits)
+        return Circuit(_commute(self._data, codes), self._num_qubits)
 
     def __iter__(self) -> Iterator[Gadget]:
         """
@@ -624,10 +624,10 @@ class GadgetCircuit:
     @overload
     def __getitem__(self, idx: SupportsIndex) -> Gadget: ...
     @overload
-    def __getitem__(self, idx: slice | list[SupportsIndex]) -> GadgetCircuit: ...
+    def __getitem__(self, idx: slice | list[SupportsIndex]) -> Circuit: ...
     def __getitem__(
         self, idx: SupportsIndex | slice | list[SupportsIndex]
-    ) -> Gadget | GadgetCircuit:
+    ) -> Gadget | Circuit:
         """
         Accesses the gadget at a given index, or selects/slices a sub-circuit.
 
@@ -636,18 +636,18 @@ class GadgetCircuit:
         if isinstance(idx, SupportsIndex):
             return Gadget(self._data[int(idx)], self._num_qubits)
         assert validate(idx, slice | list[SupportsIndex])
-        return GadgetCircuit(self._data[idx, :], self._num_qubits)  # type: ignore[index]
+        return Circuit(self._data[idx, :], self._num_qubits)  # type: ignore[index]
 
     @overload
     def __setitem__(self, idx: SupportsIndex, value: Gadget) -> None: ...
     @overload
     def __setitem__(
-        self, idx: slice | list[SupportsIndex], value: GadgetCircuit
+        self, idx: slice | list[SupportsIndex], value: Circuit
     ) -> None: ...
     def __setitem__(
         self,
         idx: SupportsIndex | slice | list[SupportsIndex],
-        value: Gadget | GadgetCircuit,
+        value: Gadget | Circuit,
     ) -> None:
         """
         Writes a gadget at the given index of this circuit,
@@ -685,10 +685,10 @@ class GadgetCircuit:
 
         @staticmethod
         def _validate_new_args(
-            data: GadgetCircData, num_qubits: int | None
+            data: CircuitData, num_qubits: int | None
         ) -> Literal[True]:
             """Validates the arguments of the :meth:`__new__` method."""
-            validate(data, GadgetCircData)
+            validate(data, CircuitData)
             if num_qubits is not None:
                 validate(num_qubits, int)
                 if num_qubits < 0:
@@ -700,15 +700,15 @@ class GadgetCircuit:
         def _validate_setitem_args(
             self,
             idx: SupportsIndex | slice | list[SupportsIndex],
-            value: Gadget | GadgetCircuit,
+            value: Gadget | Circuit,
         ) -> Literal[True]:
             """Validates the arguments to the :meth:`__setitem__` method."""
             if isinstance(idx, SupportsIndex):
                 validate(value, Gadget)
             else:
-                validate(value, GadgetCircuit)
+                validate(value, Circuit)
                 m_lhs = len(self._data[idx])  # type: ignore[index]
-                m_rhs = cast(GadgetCircuit, value).num_gadgets
+                m_rhs = cast(Circuit, value).num_gadgets
                 if m_lhs != m_rhs:
                     raise ValueError(
                         "Mismatch in number of gadgets while writing sub-circuit:"

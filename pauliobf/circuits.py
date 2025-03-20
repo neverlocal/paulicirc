@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 from collections.abc import Iterable, Iterator
-from fractions import Fraction
 from typing import (
-    Final,
     Literal,
     Self,
     Sequence,
@@ -25,39 +23,21 @@ from ._numpy import (
     interleave,
     numba_jit,
 )
+from .gadgets import (
+    PHASE_DENOM,
+    PHASE_NBYTES,
+    Gadget,
+    GadgetData,
+    float2phase,
+    get_phase,
+    overlap,
+    phase2float,
+    set_phase,
+)
 
 if __debug__:
     from typing_validation import validate
 
-
-Pauli: TypeAlias = Literal[0b00, 0b01, 0b10, 0b11]
-"""
-Type alias for a Pauli, encoded as a 2-bit integer:
-0b00 is I, 0b01 is X, 0b10 is Z, 0b11 is Y.
-"""
-
-PauliChar: TypeAlias = Literal["_", "X", "Z", "Y"]
-"""
-Type alias for single-character representations of Paulis.
-Note that I is represented as ``_``,
-following the same convention as `stim <https://github.com/quantumlib/stim>`_.
-"""
-
-PauliArray: TypeAlias = UInt8Array1D
-"""
-Type alias for a 1D array of Paulis, as 1D UInt8 array with entries in ``range(4)``.
-"""
-
-GadgetData: TypeAlias = UInt8Array1D
-"""
-Type alias for data encoding a single Pauli gadget.
-This is a 1D array of bytes, where the last 2 bytes encode the phase.
-
-The leg bit-pairs are packed, with 4 legs stored in each byte; see :obj:`Pauli`.
-
-The phase is stored as a 16-bit integer, with the most significant byte first;
-see :obj:`Phase`.
-"""
 
 CircuitData: TypeAlias = UInt8Array2D
 """Type alias for data encoding a circuit of Pauli gadgets."""
@@ -66,12 +46,6 @@ PhaseDataArray: TypeAlias = np.ndarray[tuple[int, Literal[2]], np.dtype[np.uint8
 """
 Type alias for a 1D array of encoded phase data,
 as a 2D UInt8 NumPy array of shape ``(n, 2)``, where ``n`` is the number of phases.
-"""
-
-Phase: TypeAlias = int
-r"""
-Type alias for a phase, represented as the integer :math:`k` such that the phase
-angle is equal to :math:`k\pi/32768` (see :obj:`PHASE_DENOM`).
 """
 
 PhaseArray: TypeAlias = UInt16Array1D
@@ -94,23 +68,6 @@ If the gadgets have odd overlap, the commutations performed on codes 1-7 are as 
 - 6 for ``xz -> zyx``
 - 7 for ``xz -> zxy``
 
-"""
-
-PAULI_CHARS: Final[Sequence[PauliChar]] = ("_", "X", "Z", "Y")
-"""
-Single-character representations of Paulis,
-in order compatible with the chosen encoding (cf. :obj:`Pauli`).
-"""
-
-PHASE_NBYTES: Final[Literal[2]] = 2
-"""
-Number of bytes used for phase representation, currently 2B  (see :obj:`PHASE_DENOM`).
-"""
-
-PHASE_DENOM: Final[int] = 256**PHASE_NBYTES
-r"""
-The subdivision of :math:`2\pi` used for phases.
-Currently set to 65536, so that phases are integer multiples of :math:`\pi/32768`.
 """
 
 assert PHASE_NBYTES == PhaseDataArray.__args__[0].__args__[1].__args__[0]  # type: ignore
@@ -142,68 +99,6 @@ def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
     return data
 
 
-_LEG_BYTE_SHIFTS = np.arange(6, -1, -2, dtype=np.uint8)
-"""Bit shifts ``[6, 4, 2, 0]`` used on a byte to extract leg information."""
-
-_LEG_BYTE_MASKS = 0b11 * np.ones(4, dtype=np.uint8)
-"""Byte mask used on a byte to extract leg information."""
-
-
-def _get_gadget_legs(g: GadgetData) -> PauliArray:
-    """
-    Extract an array of leg information from given gadget data.
-    The returned array has values in ``range(4)``,
-    where the encoding is explained in :obj:`GadgetData`.
-    """
-    leg_bytes = g[:-PHASE_NBYTES]
-    n = len(leg_bytes)
-    return (
-        leg_bytes.repeat(4) & np.tile(_LEG_BYTE_MASKS << _LEG_BYTE_SHIFTS, n)
-    ) >> np.tile(_LEG_BYTE_SHIFTS, n)
-
-
-def _set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
-    """
-    Sets leg information in the given gadget data.
-    The input array should have values in ``range(4)``,
-    where the encoding is explained in :obj:`GadgetData`.
-    """
-    n = len(legs)
-    leg_data = g[:-PHASE_NBYTES]
-    leg_data[:] = 0
-    leg_data[: -(-(n - 0) // 4)] |= legs[0::4] << 6  # type: ignore
-    leg_data[: -(-(n - 1) // 4)] |= legs[1::4] << 4  # type: ignore
-    leg_data[: -(-(n - 2) // 4)] |= legs[2::4] << 2  # type: ignore
-    leg_data[: -(-(n - 3) // 4)] |= legs[3::4]
-
-
-@numba_jit
-def _phase2float(phase: Phase) -> float:
-    """Converts a phase (as an int) to radians (as a float)."""
-    return 2 * np.pi * phase / PHASE_DENOM
-
-
-@numba_jit
-def _float2phase(phase_f: float) -> Phase:
-    """Converts radians (as a float) to a phase (as an int)."""
-    return int(np.round(phase_f * PHASE_DENOM * 0.5 / np.pi)) % PHASE_DENOM
-
-
-@numba_jit
-def _overlap(p: GadgetData, q: GadgetData) -> int:
-    """Gadget overlap."""
-    p = p[:-PHASE_NBYTES]
-    q = q[:-PHASE_NBYTES]
-    parity = np.zeros(len(p), dtype=np.uint8)
-    mask = 0b00000011
-    for _ in range(4):
-        _p = p & mask
-        _q = q & mask
-        parity += (_p != 0) & (_q != 0) & (_p != _q)
-        mask <<= 2
-    return int(np.sum(parity))
-
-
 _convert_xz0_yzx = numba_jit(euler.convert_xzx_yzx)
 _convert_xz0_zyx = numba_jit(euler.convert_xzx_zyx)
 _convert_xz0_zxy = numba_jit(euler.convert_xzx_zxy)
@@ -233,9 +128,9 @@ def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     xi = row[-1]
     p: GadgetData = row[:n]
     q: GadgetData = row[n : 2 * n]
-    a = _phase2float(_get_phase(p))
-    b = _phase2float(_get_phase(q))
-    if _overlap(p, q) % 2 == 0:
+    a = phase2float(get_phase(p))
+    b = phase2float(get_phase(q))
+    if overlap(p, q) % 2 == 0:
         if xi != 0:
             row[2 * n :] = p
             row[:n] = 0
@@ -284,13 +179,13 @@ def _aux_commute_pair(row: _GadgetDataTriple) -> None:
             row[:n] = q
             row[2 * n :] = r
             _a, _b, _c = _convert_xz0_zxy(a, b, 0, TOL)
-    _a_phase, _b_phase, _c_phase = _float2phase(_a), _float2phase(_b), _float2phase(_c)
-    _set_phase(row[:n], _a_phase)
-    _set_phase(row[n : 2 * n], _b_phase)
-    _set_phase(row[2 * n :], _c_phase)
+    _a_phase, _b_phase, _c_phase = float2phase(_a), float2phase(_b), float2phase(_c)
+    set_phase(row[:n], _a_phase)
+    set_phase(row[n : 2 * n], _b_phase)
+    set_phase(row[2 * n :], _c_phase)
 
 
-def _commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
+def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     """
     Commutes subsequent gadget pairs in the circuit according to the given codes;
     see :func:`_aux_commute_pair`.
@@ -313,185 +208,23 @@ assert (
 
 
 @numba_jit
-def _get_phase(g: GadgetData) -> Phase:
-    """Extracts phase data from the given gadget data."""
-    return int(g[-2]) * 256 + int(g[-1])
-
-
-@numba_jit
-def _set_phase(g: GadgetData, phase: Phase) -> None:
-    """Sets phase data in the given gadget data."""
-    g[-2], g[-1] = divmod(phase, 256)
-
-
-@numba_jit
-def _decode_phases(phases: PhaseDataArray) -> PhaseArray:
+def decode_phases(phases: PhaseDataArray) -> PhaseArray:
     """Decodes phase data from a gadget circuit into an array of phases."""
     return (phases[:, 0].astype(np.uint16) * 256 + phases[:, 1]).astype(np.uint16)
 
 
 @numba_jit
-def _encode_phases(phases: PhaseArray) -> PhaseDataArray:
+def encode_phases(phases: PhaseArray) -> PhaseDataArray:
     """Encodes an array of phases into phase data for a gadget circuit."""
     return np.vstack(np.divmod(phases, 256)).astype(np.uint8).T
 
 
 @numba_jit
-def _invert_phases(phases: PhaseDataArray) -> None:
+def invert_phases(phases: PhaseDataArray) -> None:
     """Inplace phase inversion for the given phase data."""
     phases[:, 0], phases[:, 1] = np.divmod(
         PHASE_DENOM - (256 * phases[:, 0].astype(np.uint32) + phases[:, 1]), 256
     )
-
-
-@final
-class Gadget:
-    """A Pauli gadget."""
-
-    _data: GadgetData
-    _num_qubits: int
-    _ephemeral: bool
-
-    def __new__(
-        cls,
-        data: GadgetData,
-        num_qubits: int | None = None,
-        *,
-        _ephemeral: bool = False,
-    ) -> Self:
-        """Constructs a Pauli gadget from the given data."""
-        assert Gadget._validate_new_args(data, num_qubits)
-        if num_qubits is None:
-            num_qubits = (data.shape[0] - PHASE_NBYTES) * 4
-        self = super().__new__(cls)
-        self._data = data
-        self._num_qubits = num_qubits
-        self._ephemeral = _ephemeral
-        return self
-
-    @property
-    def num_qubits(self) -> int:
-        """Number of qubits in the gadget."""
-        return self._num_qubits
-
-    @property
-    def legs(self) -> PauliArray:
-        """Legs of the gadget."""
-        return _get_gadget_legs(self._data)
-
-    @legs.setter
-    def legs(self, value: Sequence[Pauli] | PauliArray) -> None:
-        """Sets the legs of the gadget."""
-        assert validate(value, Sequence[Pauli] | PauliArray)
-        legs: PauliArray = np.asarray(value, dtype=np.uint8)
-        assert self._validate_legs_value(legs)
-        _set_gadget_legs(self._data, legs)
-
-    @property
-    def leg_paulistr(self) -> str:
-        """Paulistring representation of the gadget legs."""
-        return "".join(PAULI_CHARS[p] for p in self.legs)
-
-    @property
-    def phase(self) -> Phase:
-        """Phase of the gadget, as an integer; see :obj:`Phase`."""
-        return _get_phase(self._data)
-
-    @phase.setter
-    def phase(self, value: Phase | float | Fraction) -> None:
-        r"""
-        Sets the phase of the gadget:
-
-        - exactly, as an integer;
-        - approximately, as a float, rounded to the nearest multiple of :math:`\pi/32768`;
-        - exactly, as a fraction with denominator dividing 32768;
-        - approximately, as a fraction with any other denominator, converted to float.
-
-        """
-        if isinstance(value, Phase):
-            _set_phase(self._data, value)
-            return
-        if isinstance(value, float):
-            _set_phase(self._data, _float2phase(value))
-            return
-        validate(value, Fraction)
-        num, den = value.numerator, value.denominator
-        if (PHASE_DENOM // 2) % den == 0:
-            _set_phase(self._data, num * PHASE_DENOM // 2 // den)
-            return
-        _set_phase(self._data, _float2phase(num / den))
-
-    @property
-    def phase_float(self) -> float:
-        r"""
-        Approximate representation of the gadget phase,
-        as a floating point number :math:`0 \leq x < \pi/32768`.
-        """
-        return _phase2float(self.phase)
-
-    @property
-    def phase_frac(self) -> Fraction:
-        r"""
-        Exact representation of the gadget phase as a fraction of :math:`\pi`.
-        """
-        return Fraction(self.phase, PHASE_DENOM // 2)
-
-    @property
-    def phase_str(self) -> str:
-        r"""
-        String representation of the gadget phase, as a fraction of :math:`\pi`.
-        """
-        phase_frac = self.phase_frac
-        return f"{phase_frac.numerator}π/{phase_frac.denominator}"
-
-    def clone(self) -> Self:
-        """Creates a persistent copy of the gadget."""
-        return Gadget(self._data.copy(), self._num_qubits)
-
-    def overlap(self, other: Gadget) -> int:
-        """
-        Returns the overlap between the legs of this gadgets and those of the given
-        gadget, computed as the number of qubits where the legs of the two gadgets
-        differ and are both not the identity Pauli (the value 0, as a :obj:`Pauli`).
-        """
-        assert self._validate_same_num_qubits(other)
-        return _overlap(self._data, other._data)
-
-    def __repr__(self) -> str:
-        legs_str = self.leg_paulistr
-        if len(legs_str) > 16:
-            legs_str = legs_str[:8] + "..." + legs_str[-8:]
-        return f"<Gadget: {legs_str}, {self.phase_str}>"
-
-    if __debug__:
-
-        @staticmethod
-        def _validate_new_args(
-            data: GadgetData, num_qubits: int | None
-        ) -> Literal[True]:
-            """Validates the arguments of the :meth:`__new__` method."""
-            validate(data, GadgetData)
-            if num_qubits is not None:
-                validate(num_qubits, int)
-                if num_qubits < 0:
-                    raise ValueError("Number of qubits must be non-negative.")
-                if num_qubits > data.shape[0] * 4:
-                    raise ValueError("Number of qubits exceeds circuit width.")
-            return True
-
-        def _validate_legs_value(self, legs: PauliArray) -> Literal[True]:
-            """Validates the value of the :attr:`legs` property."""
-            if len(legs) != self.num_qubits:
-                raise ValueError("Number of legs does not match number of qubits.")
-            if not all(0 <= leg < 4 for leg in legs):
-                raise ValueError("Legs must have value in range(4).")
-            return True
-
-        def _validate_same_num_qubits(self, gadget: Gadget) -> Literal[True]:
-            validate(gadget, Gadget)
-            if self.num_qubits != gadget.num_qubits:
-                raise ValueError("Mismatch in number of qubits between gadgets.")
-            return True
 
 
 @final
@@ -568,13 +301,13 @@ class Circuit:
     @property
     def phases(self) -> PhaseArray:
         """Array of phases for the gadgets in the circuit."""
-        return _decode_phases(self._data[:, -PHASE_NBYTES:])
+        return decode_phases(self._data[:, -PHASE_NBYTES:])
 
     @phases.setter
     def phases(self, value: PhaseArray) -> None:
         """Sets phases for the gadgets in the circuit."""
         assert self._validate_phases_value(value)
-        self._data[:, -PHASE_NBYTES:] = _encode_phases(value)
+        self._data[:, -PHASE_NBYTES:] = encode_phases(value)
 
     def inverse(self) -> Self:
         inverse = self[::-1].clone()
@@ -583,7 +316,7 @@ class Circuit:
 
     def invert_phases(self) -> None:
         """Inverts phases inplace, keeping gadget order unchanged."""
-        _invert_phases(self._data[:, -PHASE_NBYTES:])
+        invert_phases(self._data[:, -PHASE_NBYTES:])
 
     def interleaved(
         self,
@@ -666,7 +399,7 @@ class Circuit:
         """
         codes = np.asarray(codes, dtype=np.uint8)
         assert self._validate_commutation_codes(codes)
-        return Circuit(_commute(self._data, codes), self._num_qubits)
+        return Circuit(commute(self._data, codes), self._num_qubits)
 
     def __iter__(self) -> Iterator[Gadget]:
         """

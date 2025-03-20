@@ -1,7 +1,7 @@
 """Circuits of Pauli gadgets."""
 
 from __future__ import annotations
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from fractions import Fraction
 from typing import (
     Final,
@@ -14,6 +14,7 @@ from typing import (
     final,
     overload,
 )
+import euler
 import numpy as np
 
 from ._numpy import (
@@ -168,6 +169,145 @@ def _float2phase(phase_f: float) -> Phase:
     """Converts radians (as a float) to a phase (as an int)."""
     return int(np.round(phase_f * PHASE_DENOM * 0.5 / np.pi)) % PHASE_DENOM
 
+@numba_jit
+def _overlap(p: GadgetData, q: GadgetData) -> int:
+    """Gadget overlap."""
+    p = p[:-PHASE_NBYTES]
+    q = q[:-PHASE_NBYTES]
+    parity = np.zeros(len(p), dtype=np.uint8)
+    mask = 0b00000011
+    for _ in range(4):
+        _p = p&mask
+        _q = q&mask
+        parity += (_p!=0)&(_q!=0)&(_p!=_q)
+        mask <<= 2
+    return int(np.sum(parity))
+
+CommutationCodeArray: TypeAlias = UInt8Array1D
+"""
+Commutation codes are integers in ``range(8)`` indicating how to commute gadets:
+0 means no commutation, values 1-7 means commutation.
+
+If the gadgets have even overlap, the commutation performed on codes 1-7 is
+always the same, ``xz -> zx``.
+If the gadgets have odd overlap, the commutations performed on codes 1-7 are as follows:
+
+- 1 for ``xz -> zyz``
+- 2 for ``xz -> yzy``
+- 3 for ``xz -> xyx``
+- 4 for ``xz -> yxy``
+- 5 for ``xz -> yzx``
+- 6 for ``xz -> zyx``
+- 7 for ``xz -> zxy``
+
+"""
+
+_convert_xz0_yzx = numba_jit(euler.convert_xzx_yzx)
+_convert_xz0_zyx = numba_jit(euler.convert_xzx_zyx)
+_convert_xz0_zxy = numba_jit(euler.convert_xzx_zxy)
+_convert_xz0_yxy = numba_jit(euler.convert_xzx_yxy)
+_convert_xz0_yzy = numba_jit(euler.convert_xzx_yzy)
+_convert_xz0_xyx = numba_jit(euler.convert_xzx_xyx)
+_convert_xz0_zyz = numba_jit(euler.convert_xzx_zyz)
+
+_GadgetTriple: TypeAlias = UInt8Array1D
+"""
+1D array containing the linearised data for three gadgets.
+
+Data for the third gadget is set to zero, except for a commutation code
+(cf. :obj:`CommutationCodeArray`) which has been written onto the last byte.
+"""
+
+@numba_jit
+def _aux_commute_pair(row: _GadgetTriple) -> None:
+    """
+    Auxiliary function used by :func:`_commute` to commute an adjacent pair of gadgets.
+    Presumes that a third, zero gadget has been inserted after the two gadgets,
+    and that the data for the tree gadgets was linearised; see :obj:`_GadgetTriple`.
+    """
+    TOL = 1e-8
+    n = len(row)//3
+    xi = row[-1]
+    p: GadgetData = row[:n]
+    q: GadgetData = row[n:2*n]
+    a = _phase2float(_get_phase(p))
+    b = _phase2float(_get_phase(q))
+    if _overlap(p, q) % 2 == 0:
+        if xi != 0:
+            row[2*n:] = p
+            row[:n] = 0
+        return
+    r = p^q # phase bytes will be overwritten later
+    if xi < 3:
+        if xi == 1:
+            # xz -> zyz
+            row[:n] = q
+            row[2*n:] = q
+            row[n:2*n] = r
+            _a, _b, _c = _convert_xz0_zyz(a, b, 0, TOL)
+        else: # xi == 2
+            # xz -> yzy
+            row[:n] = r
+            row[2*n:] = r
+            _a, _b, _c = _convert_xz0_yzy(a, b, 0, TOL)
+    elif xi < 5:
+        if xi == 3:
+            # xz -> xyx
+            row[2*n:] = p
+            row[n:2*n] = r
+            _a, _b, _c = _convert_xz0_xyx(a, b, 0, TOL)
+        else: # xi == 4
+            # xz -> yxy
+            row[n:2*n] = p
+            row[:n] = r
+            row[2*n:] = r
+            _a, _b, _c = _convert_xz0_yxy(a, b, 0, TOL)
+    else:
+        if xi == 5:
+            # xz -> yzx
+            row[2*n:] = p
+            row[:n] = r
+            _a, _b, _c = _convert_xz0_yzx(a, b, 0, TOL)
+        elif xi == 6:
+            # xz -> zyx
+            row[2*n:] = p
+            row[:n] = q
+            row[n:2*n] = r
+            _a, _b, _c = _convert_xz0_zyx(a, b, 0, TOL)
+        else: # xi == 7
+            # xz -> zxy
+            q = q.copy()
+            row[n:2*n] = p
+            row[:n] = q
+            row[2*n:] = r
+            _a, _b, _c = _convert_xz0_zxy(a, b, 0, TOL)
+    _a_phase, _b_phase, _c_phase = _float2phase(_a), _float2phase(_b), _float2phase(_c)
+    row[n-2:n] = divmod(_a_phase, 256)
+    row[2*n-2:2*n] = divmod(_b_phase, 256)
+    row[-2:] = divmod(_c_phase, 256)
+    # _set_phase(row[:n], _a_phase)
+    # _set_phase(row[n:2*n], _b_phase)
+    # _set_phase(row[2*n:], _c_phase)
+
+def _commute(
+    circ: GadgetCircData,
+    codes: CommutationCodeArray
+) -> GadgetCircData:
+    """
+    Commutes subsequent gadget pairs in the circuit according to the given codes;
+    see :func:`_aux_commute_pair`.
+    Expects the number of codes to be ``m//2``, where ``m`` is the number of gadgets.
+    """
+    m, _n = circ.shape
+    _m = m+m//2+2*(m%2)
+    exp_circ = np.zeros((_m, _n), dtype=np.uint8)
+    exp_circ[::3] = circ[::2]
+    exp_circ[1:_m-2*(m%2):3] = circ[1::2]
+    exp_circ[2:_m-(m%2):3, -1] = codes%8
+    reshaped_exp_circ = exp_circ.reshape(_m//3, 3*_n)
+    np.apply_along_axis(_aux_commute_pair, 1, reshaped_exp_circ) # type: ignore
+    return exp_circ[~np.all(exp_circ==0, axis=1)] # type: ignore
+
 
 assert (
     PHASE_NBYTES == 2
@@ -204,21 +344,6 @@ def _invert_phases(phases: PhaseDataArray) -> None:
     phases[:, 0], phases[:, 1] = np.divmod(
         PHASE_DENOM - (256 * phases[:, 0].astype(np.uint32) + phases[:, 1]), 256
     )
-
-
-@numba_jit
-def _overlap(p: GadgetData, q: GadgetData) -> int:
-    """Gadget overlap."""
-    p = p[:-PHASE_NBYTES]
-    q = q[:-PHASE_NBYTES]
-    parity = np.zeros(len(p), dtype=np.uint8)
-    mask = 0b00000011
-    for _ in range(4):
-        _p = p&mask
-        _q = q&mask
-        parity += (_p!=0)&(_q!=0)&(_p!=_q)
-        mask <<= 2
-    return int(np.sum(parity))
 
 
 @final
@@ -467,7 +592,33 @@ class GadgetCircuit:
             g._data = row
             yield g
 
-    def __iter__(self) -> Iterable[Gadget]:
+    def random_commutation_codes(
+        self,
+        *,
+        non_zero: bool = False,
+        rng: int | RNG | None = None
+    ) -> CommutationCodeArray:
+        """
+        Returns an array of randomly sampled commutation codes for this circuit;
+        see :obj:`CommutationCodeArray`.
+
+        If ``non_zero`` is set to :obj:`True`, commutation codes are all non-zero,
+        forcing commutation for all pairs.
+        """
+        if not isinstance(rng, RNG):
+            rng = np.random.default_rng(rng)
+        return rng.integers(int(non_zero), 8, self.num_gadgets//2, dtype=np.uint8)
+
+    def commute(self, codes: Sequence[int] | CommutationCodeArray) -> Self:
+        """
+        Commutes adjacent gadget pairs in the circuit according to the given commutation
+        codes; see :obj:`CommutationCodeArray`.
+        """
+        codes = np.asarray(codes, dtype=np.uint8)
+        assert self._validate_commutation_codes(codes)
+        return GadgetCircuit(_commute(self._data, codes), self._num_qubits)
+
+    def __iter__(self) -> Iterator[Gadget]:
         """
         Iterates over the gadgets in the circuit.
 
@@ -581,4 +732,15 @@ class GadgetCircuit:
             validate(value, PhaseArray)
             if len(value) != self.num_gadgets:
                 raise ValueError("Number of phases does not match number of gadgets.")
+            return True
+
+        def _validate_commutation_codes(self, codes: CommutationCodeArray) -> Literal[True]:
+            validate(codes, CommutationCodeArray)
+            if len(codes) != self.num_gadgets//2:
+                raise ValueError(
+                    f"Expected {self.num_gadgets//2} communication codes,"
+                    f"found {len(codes)} instead."
+                )
+            if np.any(codes >= 8):
+                raise ValueError("Communication codes must be in range(8).")
             return True

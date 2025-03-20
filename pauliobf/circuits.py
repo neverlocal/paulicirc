@@ -42,12 +42,6 @@ Note that I is represented as ``_``,
 following the same convention as `stim <https://github.com/quantumlib/stim>`_.
 """
 
-PAULI_CHARS: Final[Sequence[PauliChar]] = ("_", "X", "Z", "Y")
-"""
-Single-character representations of Paulis,
-in order compatible with the chosen encoding (cf. :obj:`Pauli`).
-"""
-
 PauliArray: TypeAlias = UInt8Array1D
 """
 Type alias for a 1D array of Paulis, as 1D UInt8 array with entries in ``range(4)``.
@@ -67,17 +61,6 @@ see :obj:`Phase`.
 GadgetCircData: TypeAlias = UInt8Array2D
 """Type alias for data encoding a circuit of Pauli gadgets."""
 
-PHASE_NBYTES: Final[Literal[2]] = 2
-"""
-Number of bytes used for phase representation, currently 2B  (see :obj:`PHASE_DENOM`).
-"""
-
-PHASE_DENOM: Final[int] = 256**PHASE_NBYTES
-r"""
-The subdivision of :math:`2\pi` used for phases.
-Currently set to 65536, so that phases are integer multiples of :math:`\pi/32768`.
-"""
-
 PhaseDataArray: TypeAlias = np.ndarray[tuple[int, Literal[2]], np.dtype[np.uint8]]
 """
 Type alias for a 1D array of encoded phase data,
@@ -93,6 +76,41 @@ angle is equal to :math:`k\pi/32768` (see :obj:`PHASE_DENOM`).
 PhaseArray: TypeAlias = UInt16Array1D
 """Type alias for a 1D array of phases, as a 1D UInt16 array."""
 
+CommutationCodeArray: TypeAlias = UInt8Array1D
+"""
+Commutation codes are integers in ``range(8)`` indicating how to commute gadets:
+0 means no commutation, values 1-7 means commutation.
+
+If the gadgets have even overlap, the commutation performed on codes 1-7 is
+always the same, ``xz -> zx``.
+If the gadgets have odd overlap, the commutations performed on codes 1-7 are as follows:
+
+- 1 for ``xz -> zyz``
+- 2 for ``xz -> yzy``
+- 3 for ``xz -> xyx``
+- 4 for ``xz -> yxy``
+- 5 for ``xz -> yzx``
+- 6 for ``xz -> zyx``
+- 7 for ``xz -> zxy``
+
+"""
+
+PAULI_CHARS: Final[Sequence[PauliChar]] = ("_", "X", "Z", "Y")
+"""
+Single-character representations of Paulis,
+in order compatible with the chosen encoding (cf. :obj:`Pauli`).
+"""
+
+PHASE_NBYTES: Final[Literal[2]] = 2
+"""
+Number of bytes used for phase representation, currently 2B  (see :obj:`PHASE_DENOM`).
+"""
+
+PHASE_DENOM: Final[int] = 256**PHASE_NBYTES
+r"""
+The subdivision of :math:`2\pi` used for phases.
+Currently set to 65536, so that phases are integer multiples of :math:`\pi/32768`.
+"""
 
 assert PHASE_NBYTES == PhaseDataArray.__args__[0].__args__[1].__args__[0]  # type: ignore
 assert PhaseArray.__args__[1].__args__[0].__name__ == f"uint{8*PHASE_NBYTES}"  # type: ignore
@@ -169,6 +187,7 @@ def _float2phase(phase_f: float) -> Phase:
     """Converts radians (as a float) to a phase (as an int)."""
     return int(np.round(phase_f * PHASE_DENOM * 0.5 / np.pi)) % PHASE_DENOM
 
+
 @numba_jit
 def _overlap(p: GadgetData, q: GadgetData) -> int:
     """Gadget overlap."""
@@ -177,30 +196,12 @@ def _overlap(p: GadgetData, q: GadgetData) -> int:
     parity = np.zeros(len(p), dtype=np.uint8)
     mask = 0b00000011
     for _ in range(4):
-        _p = p&mask
-        _q = q&mask
-        parity += (_p!=0)&(_q!=0)&(_p!=_q)
+        _p = p & mask
+        _q = q & mask
+        parity += (_p != 0) & (_q != 0) & (_p != _q)
         mask <<= 2
     return int(np.sum(parity))
 
-CommutationCodeArray: TypeAlias = UInt8Array1D
-"""
-Commutation codes are integers in ``range(8)`` indicating how to commute gadets:
-0 means no commutation, values 1-7 means commutation.
-
-If the gadgets have even overlap, the commutation performed on codes 1-7 is
-always the same, ``xz -> zx``.
-If the gadgets have odd overlap, the commutations performed on codes 1-7 are as follows:
-
-- 1 for ``xz -> zyz``
-- 2 for ``xz -> yzy``
-- 3 for ``xz -> xyx``
-- 4 for ``xz -> yxy``
-- 5 for ``xz -> yzx``
-- 6 for ``xz -> zyx``
-- 7 for ``xz -> zxy``
-
-"""
 
 _convert_xz0_yzx = numba_jit(euler.convert_xzx_yzx)
 _convert_xz0_zyx = numba_jit(euler.convert_xzx_zyx)
@@ -210,7 +211,7 @@ _convert_xz0_yzy = numba_jit(euler.convert_xzx_yzy)
 _convert_xz0_xyx = numba_jit(euler.convert_xzx_xyx)
 _convert_xz0_zyz = numba_jit(euler.convert_xzx_zyz)
 
-_GadgetTriple: TypeAlias = UInt8Array1D
+_GadgetDataTriple: TypeAlias = UInt8Array1D
 """
 1D array containing the linearised data for three gadgets.
 
@@ -218,95 +219,91 @@ Data for the third gadget is set to zero, except for a commutation code
 (cf. :obj:`CommutationCodeArray`) which has been written onto the last byte.
 """
 
+
 @numba_jit
-def _aux_commute_pair(row: _GadgetTriple) -> None:
+def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     """
     Auxiliary function used by :func:`_commute` to commute an adjacent pair of gadgets.
     Presumes that a third, zero gadget has been inserted after the two gadgets,
     and that the data for the tree gadgets was linearised; see :obj:`_GadgetTriple`.
     """
     TOL = 1e-8
-    n = len(row)//3
+    n = len(row) // 3
     xi = row[-1]
     p: GadgetData = row[:n]
-    q: GadgetData = row[n:2*n]
+    q: GadgetData = row[n : 2 * n]
     a = _phase2float(_get_phase(p))
     b = _phase2float(_get_phase(q))
     if _overlap(p, q) % 2 == 0:
         if xi != 0:
-            row[2*n:] = p
+            row[2 * n :] = p
             row[:n] = 0
         return
-    r = p^q # phase bytes will be overwritten later
+    r = p ^ q  # phase bytes will be overwritten later
     if xi < 3:
         if xi == 1:
             # xz -> zyz
             row[:n] = q
-            row[2*n:] = q
-            row[n:2*n] = r
+            row[2 * n :] = q
+            row[n : 2 * n] = r
             _a, _b, _c = _convert_xz0_zyz(a, b, 0, TOL)
-        else: # xi == 2
+        else:  # xi == 2
             # xz -> yzy
             row[:n] = r
-            row[2*n:] = r
+            row[2 * n :] = r
             _a, _b, _c = _convert_xz0_yzy(a, b, 0, TOL)
     elif xi < 5:
         if xi == 3:
             # xz -> xyx
-            row[2*n:] = p
-            row[n:2*n] = r
+            row[2 * n :] = p
+            row[n : 2 * n] = r
             _a, _b, _c = _convert_xz0_xyx(a, b, 0, TOL)
-        else: # xi == 4
+        else:  # xi == 4
             # xz -> yxy
-            row[n:2*n] = p
+            row[n : 2 * n] = p
             row[:n] = r
-            row[2*n:] = r
+            row[2 * n :] = r
             _a, _b, _c = _convert_xz0_yxy(a, b, 0, TOL)
     else:
         if xi == 5:
             # xz -> yzx
-            row[2*n:] = p
+            row[2 * n :] = p
             row[:n] = r
             _a, _b, _c = _convert_xz0_yzx(a, b, 0, TOL)
         elif xi == 6:
             # xz -> zyx
-            row[2*n:] = p
+            row[2 * n :] = p
             row[:n] = q
-            row[n:2*n] = r
+            row[n : 2 * n] = r
             _a, _b, _c = _convert_xz0_zyx(a, b, 0, TOL)
-        else: # xi == 7
+        else:  # xi == 7
             # xz -> zxy
             q = q.copy()
-            row[n:2*n] = p
+            row[n : 2 * n] = p
             row[:n] = q
-            row[2*n:] = r
+            row[2 * n :] = r
             _a, _b, _c = _convert_xz0_zxy(a, b, 0, TOL)
     _a_phase, _b_phase, _c_phase = _float2phase(_a), _float2phase(_b), _float2phase(_c)
-    row[n-2:n] = divmod(_a_phase, 256)
-    row[2*n-2:2*n] = divmod(_b_phase, 256)
-    row[-2:] = divmod(_c_phase, 256)
-    # _set_phase(row[:n], _a_phase)
-    # _set_phase(row[n:2*n], _b_phase)
-    # _set_phase(row[2*n:], _c_phase)
+    _set_phase(row[:n], _a_phase)
+    _set_phase(row[n : 2 * n], _b_phase)
+    _set_phase(row[2 * n :], _c_phase)
 
-def _commute(
-    circ: GadgetCircData,
-    codes: CommutationCodeArray
-) -> GadgetCircData:
+
+def _commute(circ: GadgetCircData, codes: CommutationCodeArray) -> GadgetCircData:
     """
     Commutes subsequent gadget pairs in the circuit according to the given codes;
     see :func:`_aux_commute_pair`.
     Expects the number of codes to be ``m//2``, where ``m`` is the number of gadgets.
     """
     m, _n = circ.shape
-    _m = m+m//2+2*(m%2)
+    _m = m + m // 2 + 2 * (m % 2)
     exp_circ = np.zeros((_m, _n), dtype=np.uint8)
     exp_circ[::3] = circ[::2]
-    exp_circ[1:_m-2*(m%2):3] = circ[1::2]
-    exp_circ[2:_m-(m%2):3, -1] = codes%8
-    reshaped_exp_circ = exp_circ.reshape(_m//3, 3*_n)
-    np.apply_along_axis(_aux_commute_pair, 1, reshaped_exp_circ) # type: ignore
-    return exp_circ[~np.all(exp_circ==0, axis=1)] # type: ignore
+    exp_circ[1 : _m - 2 * (m % 2) : 3] = circ[1::2]
+    exp_circ[2 : _m - (m % 2) : 3, -1] = codes % 8
+    reshaped_exp_circ = exp_circ.reshape(_m // 3, 3 * _n)
+    np.apply_along_axis(_aux_commute_pair, 1, reshaped_exp_circ)  # type: ignore
+    return exp_circ[~np.all(exp_circ == 0, axis=1)]  # type: ignore
 
 
 assert (
@@ -364,7 +361,7 @@ class Gadget:
         """Constructs a Pauli gadget from the given data."""
         assert Gadget._validate_new_args(data, num_qubits)
         if num_qubits is None:
-            num_qubits = (data.shape[0]-PHASE_NBYTES) * 4
+            num_qubits = (data.shape[0] - PHASE_NBYTES) * 4
         self = super().__new__(cls)
         self._data = data
         self._num_qubits = num_qubits
@@ -418,10 +415,10 @@ class Gadget:
             return
         validate(value, Fraction)
         num, den = value.numerator, value.denominator
-        if (PHASE_DENOM//2)%den == 0:
-            _set_phase(self._data, num*PHASE_DENOM//2//den)
+        if (PHASE_DENOM // 2) % den == 0:
+            _set_phase(self._data, num * PHASE_DENOM // 2 // den)
             return
-        _set_phase(self._data, _float2phase(num/den))
+        _set_phase(self._data, _float2phase(num / den))
 
     @property
     def phase_float(self) -> float:
@@ -436,7 +433,7 @@ class Gadget:
         r"""
         Exact representation of the gadget phase as a fraction of :math:`\pi`.
         """
-        return Fraction(self.phase, PHASE_DENOM//2)
+        return Fraction(self.phase, PHASE_DENOM // 2)
 
     @property
     def phase_str(self) -> str:
@@ -535,7 +532,7 @@ class GadgetCircuit:
         """
         assert GadgetCircuit._validate_new_args(data, num_qubits)
         if num_qubits is None:
-            num_qubits = (data.shape[1]-PHASE_NBYTES) * 4
+            num_qubits = (data.shape[1] - PHASE_NBYTES) * 4
         self = super().__new__(cls)
         self._data = data
         self._num_qubits = num_qubits
@@ -593,10 +590,7 @@ class GadgetCircuit:
             yield g
 
     def random_commutation_codes(
-        self,
-        *,
-        non_zero: bool = False,
-        rng: int | RNG | None = None
+        self, *, non_zero: bool = False, rng: int | RNG | None = None
     ) -> CommutationCodeArray:
         """
         Returns an array of randomly sampled commutation codes for this circuit;
@@ -607,7 +601,7 @@ class GadgetCircuit:
         """
         if not isinstance(rng, RNG):
             rng = np.random.default_rng(rng)
-        return rng.integers(int(non_zero), 8, self.num_gadgets//2, dtype=np.uint8)
+        return rng.integers(int(non_zero), 8, self.num_gadgets // 2, dtype=np.uint8)
 
     def commute(self, codes: Sequence[int] | CommutationCodeArray) -> Self:
         """
@@ -713,7 +707,7 @@ class GadgetCircuit:
                 validate(value, Gadget)
             else:
                 validate(value, GadgetCircuit)
-                m_lhs = len(self._data[idx]) # type: ignore[index]
+                m_lhs = len(self._data[idx])  # type: ignore[index]
                 m_rhs = cast(GadgetCircuit, value).num_gadgets
                 if m_lhs != m_rhs:
                     raise ValueError(
@@ -734,9 +728,11 @@ class GadgetCircuit:
                 raise ValueError("Number of phases does not match number of gadgets.")
             return True
 
-        def _validate_commutation_codes(self, codes: CommutationCodeArray) -> Literal[True]:
-            validate(codes, CommutationCodeArray)
-            if len(codes) != self.num_gadgets//2:
+        def _validate_commutation_codes(
+            self, codes: CommutationCodeArray
+        ) -> Literal[True]:
+            """Validates commutation codes passed to :meth:`commute`."""
+            if len(codes) != self.num_gadgets // 2:
                 raise ValueError(
                     f"Expected {self.num_gadgets//2} communication codes,"
                     f"found {len(codes)} instead."

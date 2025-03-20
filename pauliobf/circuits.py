@@ -97,36 +97,6 @@ assert PHASE_NBYTES == PhaseDataArray.__args__[0].__args__[1].__args__[0]  # typ
 assert PhaseArray.__args__[1].__args__[0].__name__ == f"uint{8*PHASE_NBYTES}"  # type: ignore
 
 
-def _circ_ncols(m: int, n: int) -> int:
-    """
-    Number of columns for a circuit with ``m`` gadgets on ``n`` qubits.
-
-    Presumes that the number ``n`` of qubits is divisible by 4.
-    """
-    legs_nbytes = -(-n // 4)
-    return legs_nbytes + PHASE_NBYTES
-
-
-def _shape(circ: GadgetCircData) -> tuple[int, int]:
-    """
-    Given gadget circuit data, returns the pair ``(m,n)`` of
-    the number ``m`` of gadgets and the number ``n`` of qubits.
-    """
-    m, _n = circ.shape
-    n = (_n - PHASE_NBYTES) * 4
-    return m, n
-
-
-def _get_phases(circ: GadgetCircData) -> PhaseDataArray:
-    """Returns the array of phases for the gadgets in a given circuit."""
-    return circ[:, -PHASE_NBYTES:]
-
-
-def _set_phases(circ: GadgetCircData, phases: PhaseDataArray) -> None:
-    """Sets the array of phases for the gadgets in the given circuit."""
-    circ[:, -PHASE_NBYTES:] = phases
-
-
 def _zero_circ(m: int, n: int) -> GadgetCircData:
     """
     Returns a circuit with ``m`` gadgets on ``n`` qubits,
@@ -134,7 +104,8 @@ def _zero_circ(m: int, n: int) -> GadgetCircData:
 
     Presumes that the number ``n`` of qubits is divisible by 4.
     """
-    return np.zeros((m, _circ_ncols(m, n)), dtype=np.uint8)
+    ncols = PHASE_NBYTES - (-n // 4)
+    return np.zeros((m, ncols), dtype=np.uint8)
 
 
 def _rand_circ(m: int, n: int, *, rng: RNG) -> GadgetCircData:
@@ -144,7 +115,8 @@ def _rand_circ(m: int, n: int, *, rng: RNG) -> GadgetCircData:
 
     Presumes that the number ``n`` of qubits is divisible by 4.
     """
-    data = rng.integers(0, 256, (m, _circ_ncols(m, n)), dtype=np.uint8)
+    ncols = PHASE_NBYTES - (-n // 4)
+    data = rng.integers(0, 256, (m, ncols), dtype=np.uint8)
     mask = 0b11111111 << 2 * (-n % 4) & 0b11111111
     data[:, -PHASE_NBYTES - 1] &= mask
     return data
@@ -212,6 +184,26 @@ def _get_phase(g: GadgetData) -> Phase:
 def _set_phase(g: GadgetData, phase: Phase) -> None:
     """Sets phase data in the given gadget data."""
     g[-2], g[-1] = divmod(phase, 256)
+
+
+@numba_jit
+def _decode_phases(phases: PhaseDataArray) -> PhaseArray:
+    """Decodes phase data from a gadget circuit into an array of phases."""
+    return (phases[:, 0].astype(np.uint16) * 256 + phases[:, 1]).astype(np.uint16)
+
+
+@numba_jit
+def _encode_phases(phases: PhaseArray) -> PhaseDataArray:
+    """Encodes an array of phases into phase data for a gadget circuit."""
+    return np.vstack(np.divmod(phases, 256)).astype(np.uint8).T
+
+
+@numba_jit
+def _invert_phases(phases: PhaseDataArray) -> None:
+    """Inplace phase inversion for the given phase data."""
+    phases[:, 0], phases[:, 1] = np.divmod(
+        PHASE_DENOM - (256 * phases[:, 0].astype(np.uint32) + phases[:, 1]), 256
+    )
 
 
 @final
@@ -314,7 +306,6 @@ class Gadget:
         phase_frac = self.phase_frac
         return f"{phase_frac.numerator}π/{phase_frac.denominator}"
 
-
     def clone(self) -> Self:
         """Creates a persistent copy of the gadget."""
         return Gadget(self._data.copy(), self._num_qubits)
@@ -395,6 +386,10 @@ class GadgetCircuit:
         self._num_qubits = num_qubits
         return self
 
+    def clone(self) -> Self:
+        """Creates a copy of the gadget circuit."""
+        return GadgetCircuit(self._data.copy(), self._num_qubits)
+
     @property
     def num_gadgets(self) -> int:
         """Number of gadgets in the circuit."""
@@ -404,6 +399,26 @@ class GadgetCircuit:
     def num_qubits(self) -> int:
         """Number of qubits in the circuit."""
         return self._num_qubits
+
+    @property
+    def phases(self) -> PhaseArray:
+        """Array of phases for the gadgets in the circuit."""
+        return _decode_phases(self._data[:, -PHASE_NBYTES:])
+
+    @phases.setter
+    def phases(self, value: PhaseArray) -> None:
+        """Sets phases for the gadgets in the circuit."""
+        assert self._validate_phases_value(value)
+        self._data[:, -PHASE_NBYTES:] = _encode_phases(value)
+
+    def inverse(self) -> Self:
+        inverse = self[::-1].clone()
+        inverse.invert_phases()
+        return inverse
+
+    def invert_phases(self) -> None:
+        """Inverts phases inplace, keeping gadget order unchanged."""
+        _invert_phases(self._data[:, -PHASE_NBYTES:])
 
     def iter_gadgets(self, *, fast: bool = False) -> Iterable[Gadget]:
         """
@@ -529,4 +544,11 @@ class GadgetCircuit:
                     "Mismatch in number of qubits while writing circuit gadgets:"
                     f" lhs has {self.num_qubits} qubits, rhs has {value.num_qubits}."
                 )
+            return True
+
+        def _validate_phases_value(self, value: PhaseArray) -> Literal[True]:
+            """Validates the value of the :attr:`phases` property."""
+            validate(value, PhaseArray)
+            if len(value) != self.num_gadgets:
+                raise ValueError("Number of phases does not match number of gadgets.")
             return True

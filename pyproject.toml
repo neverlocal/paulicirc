@@ -10,11 +10,12 @@ dependencies = [
     "numba>=0.61",
     "euler>=1.0.2.post0",
     "typing-validation>=1.2.12",
+    "autoray>=0.7.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
-    "Development Status :: 4 - Beta",
+    "Development Status :: 2 - Pre-Alpha",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.11",

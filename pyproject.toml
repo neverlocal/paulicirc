@@ -50,5 +50,9 @@ target-version = ["py313"]
 python_version = "3.13"
 strict = true
 
+[tool.pyright]
+typeCheckingMode = "off"
+reportInvalidTypeForm = false
+
 [dependency-groups]
 dev = ["pytest>=8.0"]

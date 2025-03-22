@@ -229,7 +229,7 @@ def invert_phases(phases: PhaseDataArray) -> None:
 
 @final
 class Circuit:
-    """A circuit of Pauli gadgets."""
+    """A quantum circuit, represented as a sequential composition of Pauli gadgets."""
 
     @classmethod
     def zero(cls, num_gadgets: int, num_qubits: int) -> Self:
@@ -239,7 +239,7 @@ class Circuit:
         """
         assert Circuit._validate_circ_shape(num_gadgets, num_qubits)
         data = _zero_circ(num_gadgets, num_qubits)
-        return cls(data)
+        return cls(data, num_qubits)
 
     @classmethod
     def random(
@@ -253,7 +253,7 @@ class Circuit:
         if not isinstance(rng, RNG):
             rng = np.random.default_rng(rng)
         data = _rand_circ(num_gadgets, num_qubits, rng=rng)
-        return cls(data)
+        return cls(data, num_qubits)
 
     @classmethod
     def random_inverse_pairs(
@@ -310,6 +310,9 @@ class Circuit:
         self._data[:, -PHASE_NBYTES:] = encode_phases(value)
 
     def inverse(self) -> Self:
+        """
+        Returns the inverse of this graph, with both phases and gadget order inverted.
+        """
         inverse = self[::-1].clone()
         inverse.invert_phases()
         return inverse

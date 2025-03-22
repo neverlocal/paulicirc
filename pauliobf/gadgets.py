@@ -186,7 +186,7 @@ class Gadget:
     @property
     def legs(self) -> PauliArray:
         """Legs of the gadget."""
-        return _get_gadget_legs(self._data)
+        return _get_gadget_legs(self._data)[: self._num_qubits]
 
     @legs.setter
     def legs(self, value: Sequence[Pauli] | PauliArray) -> None:

@@ -157,6 +157,30 @@ def set_phase(g: GadgetData, phase: Phase) -> None:
 class Gadget:
     """A Pauli gadget."""
 
+    @staticmethod
+    def float2phase(rad: float) -> Phase:
+        """Converts a phase (as an int) to radians (as a float)."""
+        return float2phase(rad)
+
+    @staticmethod
+    def phase2float(phase: Phase) -> float:
+        """Converts radians (as a float) to a phase (as an int)."""
+        return phase2float(phase)
+
+    @staticmethod
+    def phase2frac(phase: Phase) -> Fraction:
+        r"""Converts a phase (as an int) to a fraction of :math:`\pi`."""
+        return Fraction(phase, PHASE_DENOM // 2)
+
+    @staticmethod
+    def frac2phase(frac: Fraction) -> Phase:
+        r"""Converts a fraction of :math:`\pi` to a phase (as an int)."""
+        assert validate(frac, Fraction)
+        num, den = frac.numerator, frac.denominator
+        if (PHASE_DENOM // 2) % den == 0:
+            return num * PHASE_DENOM // 2 // den
+        return float2phase(num / den)
+
     _data: GadgetData
     _num_qubits: int
     _ephemeral: bool
@@ -221,14 +245,9 @@ class Gadget:
             set_phase(self._data, value)
             return
         if isinstance(value, float):
-            set_phase(self._data, float2phase(value))
+            set_phase(self._data, Gadget.float2phase(value))
             return
-        validate(value, Fraction)
-        num, den = value.numerator, value.denominator
-        if (PHASE_DENOM // 2) % den == 0:
-            set_phase(self._data, num * PHASE_DENOM // 2 // den)
-            return
-        set_phase(self._data, float2phase(num / den))
+        set_phase(self._data, Gadget.frac2phase(value))
 
     @property
     def phase_float(self) -> float:
@@ -236,14 +255,14 @@ class Gadget:
         Approximate representation of the gadget phase,
         as a floating point number :math:`0 \leq x < \pi/32768`.
         """
-        return phase2float(self.phase)
+        return Gadget.phase2float(self.phase)
 
     @property
     def phase_frac(self) -> Fraction:
         r"""
         Exact representation of the gadget phase as a fraction of :math:`\pi`.
         """
-        return Fraction(self.phase, PHASE_DENOM // 2)
+        return Gadget.phase2frac(self.phase)
 
     @property
     def phase_str(self) -> str:

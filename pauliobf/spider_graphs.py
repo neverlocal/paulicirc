@@ -17,7 +17,7 @@ if __debug__:
     from typing_validation import validate
     import autoray  # type: ignore[import-untyped]
 
-Matrix: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.complex128]]
+Matrix: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.inexact[Any]]]
 """
 Type alias for complex matrices in a spider graph.
 The type specifies that these are NumPy arrays, but in reality any class
@@ -163,6 +163,8 @@ class SpiderGraph:
         Returns the indices of the new spiders.
         """
         dims = tuple(dims)
+        if not dims:
+            return ()
         assert self.__validate_spider_dims(dims)
         spider_dims, n = self._spider_dims, self._num_spiders
         ndims = len(dims)
@@ -195,6 +197,8 @@ class SpiderGraph:
         Returns the indices of the new edges.
         """
         new_edges = tuple(new_edges)
+        if not new_edges:
+            return ()
         assert self.__validate_edge_data(new_edges)
         edges, m = self._edges, self._num_edges
         nedges = len(new_edges)

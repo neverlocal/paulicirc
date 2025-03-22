@@ -3,6 +3,7 @@
 from __future__ import annotations
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import (
+    TYPE_CHECKING,
     Any,
     Final,
     Literal,
@@ -12,6 +13,12 @@ from typing import (
     final,
 )
 import numpy as np
+
+if TYPE_CHECKING:
+    try:
+        from networkx import DiGraph  # type: ignore[import-untyped]
+    except ModuleNotFoundError:
+        DiGraph = Any
 
 if __debug__:
     from typing_validation import validate
@@ -266,6 +273,29 @@ class SpiderGraph:
             "outputs": outputs,
             "size_dict": dict(enumerate(self._spider_dims)),
         }
+
+    def to_nx_graph(self) -> DiGraph:
+        """
+        Converts this spider graph to a :mod:`networkx`
+        :class:`~networkx.classes.digraph.DiGraph` instance.
+
+        Spider dimension is stored in digraph node data as the ``"dim"`` attribute.
+        Edge matrix is stored in digraph edge data as the ``"mat"`` attribute.
+        """
+        try:
+            import networkx as nx
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                "SpiderGraph.to_nx_graph() requires networkx to be installed."
+            ) from None
+        graph = nx.DiGraph()
+        # graph.add_nodes_from(self.spiders)
+        for spider, dim in enumerate(self.spider_dims):
+            graph.add_node(spider, dim=dim)
+        # graph.add_edges_from(self.edges)
+        for mat, tail, head in self.iter_edges():
+            graph.add_edge(tail, head, mat=mat)
+        return graph
 
     def __sizeof__(self) -> int:
         s = 0

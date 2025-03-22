@@ -405,7 +405,6 @@ class Circuit:
 
         # 3. Create spider graph with sufficient initial capacity.
         n, m = self.num_qubits, self.num_gadgets
-        print(f"Creating spider graph for circuit with {n} qubits and {m} gadgets.")
         g = SpiderGraph(
             edge_capacity=(n + m * (2 * n + 1)), spider_capacity=(2 * n + m * (n + 2))
         )
@@ -413,46 +412,33 @@ class Circuit:
         # The spiders currently on top of the circuit.
         # Initialised to be the circuit inputs (exactly num_qubits spiders).
         spiders = list(g.add_spiders((2,) * n))
-        print(f"Input spiders: {spiders}")
         # The basis change to be applied to the spiders on top of the circuit.
         # The basis change for each spider is only applied when it is buried by
         # the next spider (worst case it happens at the end, with an output spider).
         prev_legs: PauliArray = np.zeros(n, dtype=np.uint8)
-        print(f"Top-level legs: {prev_legs}")
         for gadget_idx, gadget in enumerate(self.iter_gadgets(fast=True)):
-            print(f"Gadget #{gadget_idx}: {gadget.leg_paulistr} {gadget.phase_str}")
             phase = gadget.phase
             if phase == 0:
-                print("  Special case: zero phase (skipping).")
                 # Zero phase, skip the gadget.
                 continue
             legs: PauliArray = gadget.legs
             num_legs = np.sum(legs != 0)
             if num_legs == 0:
-                print("  Special case: no legs (skipping).")
                 # Zero legs, skip the gadget.
-                print(f"  Top-level spiders: {spiders}")
-                print(f"  Top-level legs: {prev_legs}")
                 continue
             if num_legs == 1:
-                print("  Special case: single leg.")
                 # Add new leg spider.
                 q = int(legs.argmax())
                 h = g.add_spider(2)
-                print(f"  Added spider {h} on qubit {q}")
                 # Connect pre leg spider to new leg spider:
                 # (prev leg spider)--|prev end|--|new start|--|z rot|--(new leg spider)
                 g.add_edge(rot_z_curr_prev(phase, legs[q], prev_legs[q]), h, spiders[q])
-                print(f"  Added edge {spiders[q]}->{h}")
                 # Update spiders and prev legs.
                 spiders[q] = h
                 prev_legs[q] = legs[q]
-                print(f"  Top-level spiders: {spiders}")
-                print(f"  Top-level legs: {prev_legs}")
                 continue
             # Boolean flags indicating whether a new spider is created at each qubit.
             is_new_spider: BoolArray1D = (legs != prev_legs) & (legs != 0)
-            print(f"  New spider flags: {is_new_spider}")
             num_new_spiders = np.sum(is_new_spider)
             # Add new leg spiders, new hub spider and new head spider.
             _spiders = list(
@@ -467,10 +453,6 @@ class Circuit:
             )
             _new_spiders = g.add_spiders((2,) * (num_new_spiders + 2))
             hub_spider, head_spider = _new_spiders[-2:]
-            print(f"  New top-level spiders: {_spiders}")
-            print(f"  Added leg spiders: {list(_new_spiders[:-2])}")
-            print(f"  Added hub spider: {hub_spider}")
-            print(f"  Added head spider: {head_spider}")
             # Connect prev leg spiders to new leg spiders:
             # (prev leg spider)--|prev end|--|new start|--(new leg spider)
             g.add_edges(
@@ -478,10 +460,6 @@ class Circuit:
                 for t, h, prev_leg, leg in zip(spiders, _spiders, prev_legs, legs)
                 if leg != prev_leg and leg != 0  # only where new spider created
             )
-            print("  Adding leg-leg edges:")
-            for t, h, prev_leg, leg in zip(spiders, _spiders, prev_legs, legs):
-                if leg != prev_leg and leg != 0:
-                    print(f"    Added edge {t}->{h}")
             # Connect new leg spiders to new hub spider:
             # (new leg spider)--|H|--(new hub spider)
             g.add_edges(
@@ -489,30 +467,20 @@ class Circuit:
                 for t, leg in zip(_spiders, legs)
                 if leg != 0
             )
-            print("  Adding leg-hub edges:")
-            for t, leg in zip(_spiders, legs):
-                if leg != 0:
-                    print(f"  Added edge {t}->{hub_spider}")
             # Connect new hub spider to new head spider:
             # (new hub spider)--|H|--|z rot|--(new head spider)
             g.add_edge(rot_zh(phase), head_spider, hub_spider)
-            print(f"  Added hub-head edge {hub_spider}->{head_spider}")
             # Update spiders and prev legs.
             spiders = _spiders
             prev_legs = np.where(is_new_spider, legs, prev_legs)
-            print(f"  Top-level spiders: {spiders}")
-            print(f"  Top-level legs: {prev_legs}")
         # Add output spiders.
         output_spiders = g.add_spiders((2,) * n)
-        print(f"Output spiders: {output_spiders}")
         # Connect leg spiders to output spiders:
         # (prev leg spider)--|prev end|--(output spider)
         g.add_edges(
             (basis_change_end[prev_leg], h, t)
             for t, h, prev_leg in zip(spiders, output_spiders, prev_legs)
         )
-        for t, h, prev_leg in zip(spiders, output_spiders, prev_legs):
-            print(f"  Added edge {t}->{h}")
         # 5. Trim spider graph capacity and return.
         g.trim_capacity()
         return g

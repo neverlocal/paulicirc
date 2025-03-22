@@ -432,7 +432,7 @@ class Circuit:
                 h = g.add_spider(2)
                 # Connect pre leg spider to new leg spider:
                 # (prev leg spider)--|prev end|--|new start|--|z rot|--(new leg spider)
-                g.add_edge(rot_z_curr_prev(phase, legs[q], prev_legs[q]), h, spiders[q])
+                g.add_edge(rot_z_curr_prev(phase, legs[q], prev_legs[q]), spiders[q], h)
                 # Update spiders and prev legs.
                 spiders[q] = h
                 prev_legs[q] = legs[q]
@@ -456,20 +456,20 @@ class Circuit:
             # Connect prev leg spiders to new leg spiders:
             # (prev leg spider)--|prev end|--|new start|--(new leg spider)
             g.add_edges(
-                (basis_change_middle[leg, prev_leg], h, t)
+                (basis_change_middle[leg, prev_leg], t, h)
                 for t, h, prev_leg, leg in zip(spiders, _spiders, prev_legs, legs)
                 if leg != prev_leg and leg != 0  # only where new spider created
             )
             # Connect new leg spiders to new hub spider:
             # (new leg spider)--|H|--(new hub spider)
             g.add_edges(
-                (basis_change_middle[1, leg], hub_spider, t)
+                (basis_change_middle[1, leg], t, hub_spider)
                 for t, leg in zip(_spiders, legs)
                 if leg != 0
             )
             # Connect new hub spider to new head spider:
             # (new hub spider)--|H|--|z rot|--(new head spider)
-            g.add_edge(rot_zh(phase), head_spider, hub_spider)
+            g.add_edge(rot_zh(phase), hub_spider, head_spider)
             # Update spiders and prev legs.
             spiders = _spiders
             prev_legs = np.where(is_new_spider, legs, prev_legs)
@@ -478,7 +478,7 @@ class Circuit:
         # Connect leg spiders to output spiders:
         # (prev leg spider)--|prev end|--(output spider)
         g.add_edges(
-            (basis_change_end[prev_leg], h, t)
+            (basis_change_end[prev_leg], t, h)
             for t, h, prev_leg in zip(spiders, output_spiders, prev_legs)
         )
         # 5. Trim spider graph capacity and return.

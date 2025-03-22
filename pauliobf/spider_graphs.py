@@ -34,7 +34,7 @@ SpiderIdx: TypeAlias = int
 """Type alias for spider indices."""
 
 EdgeData: TypeAlias = tuple[Matrix, SpiderIdx, SpiderIdx]
-"""Type alias for edge data, a triple ``(matrix, head, tail)``."""
+"""Type alias for edge data, a triple ``(matrix, tail, head)``."""
 
 EdgeIdx: TypeAlias = int
 """Type alias for edge indices."""
@@ -42,7 +42,7 @@ EdgeIdx: TypeAlias = int
 EdgeArray: TypeAlias = np.ndarray[
     tuple[int, Literal[2]], np.dtype[np.unsignedinteger[Any]]
 ]
-"""Type alias for arrays of edge arrays, 1D arrays of ``(head, tail)`` pairs."""
+"""Type alias for arrays of edge arrays, 1D arrays of ``(tail, head)`` pairs."""
 
 
 def _get_min_dtype(value: int) -> type[np.unsignedinteger[Any]]:
@@ -146,6 +146,11 @@ class SpiderGraph:
         return self._num_edges
 
     @property
+    def spiders(self) -> Sequence[SpiderIdx]:
+        """The sequence of indices for spiders in this spider graph."""
+        return range(self._num_spiders)
+
+    @property
     def spider_dims(self) -> DimArray:
         """Dimensions for spiders in this spider graph."""
         view = self._spider_dims.view()
@@ -205,22 +210,22 @@ class SpiderGraph:
         self._matrices.extend(matrix for matrix, _, _ in new_edges)
         while m + nedges > len(edges):
             edges.resize((2 * len(edges), 2), refcheck=False)
-        edges[m : m + nedges, :] = [(h, t) for _, h, t in new_edges]
+        edges[m : m + nedges, :] = [(t, h) for _, t, h in new_edges]
         self._num_edges += nedges
         return range(m, m + nedges)
 
-    def add_edge(self, mat: Matrix, head: SpiderIdx, tail: SpiderIdx) -> EdgeIdx:
+    def add_edge(self, mat: Matrix, tail: SpiderIdx, head: SpiderIdx) -> EdgeIdx:
         """
         Adds an edge with the given data to the spider graph.
         Returns the index of the new edge.
         """
         # TODO: make this more efficient
-        return self.add_edges([(mat, head, tail)])[0]
+        return self.add_edges([(mat, tail, head)])[0]
 
     def iter_edges(self) -> Iterator[EdgeData]:
         """Iterates over the edges in the spider graph."""
-        for mat, (head, tail) in zip(self._matrices, self._edges):
-            yield (mat, head, tail)
+        for mat, (tail, head) in zip(self._matrices, self._edges):
+            yield (mat, tail, head)
 
     def resize_capacity(
         self,
@@ -325,11 +330,11 @@ class SpiderGraph:
         def __validate_edge_data(self, edges: tuple[EdgeData, ...]) -> Literal[True]:
             validate(edges, tuple[EdgeData, ...])
             spiders, n = self._spider_dims, self._num_spiders
-            for mat, head, tail in edges:
-                if not 0 <= head < n:
-                    raise ValueError(f"Invalid head spider index {head}")
+            for mat, tail, head in edges:
                 if not 0 <= tail < n:
                     raise ValueError(f"Invalid tail spider index {tail}")
+                if not 0 <= head < n:
+                    raise ValueError(f"Invalid head spider index {head}")
                 shape = (spiders[head], spiders[tail])
                 mat_shape = autoray.shape(mat)
                 if mat_shape != shape:

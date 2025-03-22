@@ -181,6 +181,14 @@ class SpiderGraph:
         self._max_dim = max(max_dim, self._max_dim)
         return range(n, new_n)
 
+    def add_spider(self, dim: Dim) -> SpiderIdx:
+        """
+        Adds a spider with the given dimension to the spider graph.
+        Returns the index of the new spider.
+        """
+        # TODO: make this more efficient
+        return self.add_spiders([dim])[0]
+
     def add_edges(self, new_edges: Iterable[EdgeData]) -> Sequence[EdgeIdx]:
         """
         Adds edges with the given data to the spider graph.
@@ -196,6 +204,14 @@ class SpiderGraph:
         edges[m : m + nedges, :] = [(h, t) for _, h, t in new_edges]
         self._num_edges += nedges
         return range(m, m + nedges)
+
+    def add_edge(self, mat: Matrix, head: SpiderIdx, tail: SpiderIdx) -> EdgeIdx:
+        """
+        Adds an edge with the given data to the spider graph.
+        Returns the index of the new edge.
+        """
+        # TODO: make this more efficient
+        return self.add_edges([(mat, head, tail)])[0]
 
     def iter_edges(self) -> Iterator[EdgeData]:
         """Iterates over the edges in the spider graph."""

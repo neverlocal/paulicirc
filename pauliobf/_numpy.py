@@ -7,6 +7,9 @@ import numpy as np
 import numba  # type: ignore
 import autoray  # type: ignore
 
+BoolArray1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.bool_]]
+"""Type alias for 1D bool NumPy arrays."""
+
 UInt8Array1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.uint8]]
 """Type alias for 1D uint8 NumPy arrays."""
 

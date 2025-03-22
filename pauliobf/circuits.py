@@ -14,9 +14,13 @@ from typing import (
 )
 import euler
 import numpy as np
+import autoray  # type: ignore[import-untyped]
+
+from .spider_graphs import Matrix, SpiderGraph
 
 from ._numpy import (
     RNG,
+    BoolArray1D,
     UInt16Array1D,
     UInt8Array1D,
     UInt8Array2D,
@@ -28,6 +32,8 @@ from .gadgets import (
     PHASE_NBYTES,
     Gadget,
     GadgetData,
+    Pauli,
+    PauliArray,
     float2phase,
     get_phase,
     overlap,
@@ -343,26 +349,134 @@ class Circuit:
         )
         return Circuit(data, self._num_qubits)
 
-    def _validate_interleave_args(
-        self,
-        other: Circuit,
-        self_step: int,
-        other_step: int,
-        other_start: int = 0,
-    ) -> Literal[True]:
-        """Validates the arguments to the :meth:`interleaved` method."""
-        validate(other, Circuit)
-        validate(self_step, int)
-        validate(other_step, int)
-        if self.num_qubits != other.num_qubits:
-            raise ValueError("Mismatch in number of qubits.")
-        if not 0 < self_step <= self.num_gadgets:
-            raise ValueError(f"Invalid {self_step = }")
-        if not 0 < other_step <= other.num_gadgets:
-            raise ValueError(f"Invalid {other_step = }")
-        if not 0 <= other_start < other.num_gadgets:
-            raise ValueError(f"Invalid {other_start = }")
-        return True
+    def spider_graph(self) -> SpiderGraph:
+        """
+        Constructs and returns a spider graph modelling the tensor network for this
+        circuit.
+        The first :attr:`num_qubits` wires are the inputs of the circuit,
+        the last :attr:`num_qubits` wires are the outputs of the circuit.
+        """
+        # 1. Extract numpy-like functions for chosen autoray backend.
+        array = autoray.numpy.array
+        complex128 = autoray.numpy.complex128
+        sqrt = autoray.numpy.sqrt
+        exp = autoray.numpy.exp
+        # 2. Define cached matrices to be used when constructing the circuit.
+        I: Matrix = array([[1, 0], [0, 1]], dtype=complex128)  # noqa: E741
+        H: Matrix = array([[1, 1], [1, -1]], dtype=complex128) / sqrt(2)
+        S: Matrix = array([[1, 0], [0, 1j]], dtype=complex128)
+        S_dag: Matrix = array([[1, 0], [0, -1j]], dtype=complex128)
+        basis_change_start = [I, H, I, S_dag]
+        basis_change_end = [I, H, I, S]
+        basis_change_middle: dict[tuple[Pauli, Pauli], Matrix] = {
+            (leg, prev_leg): basis_change_start[leg] @ basis_change_end[prev_leg]
+            for leg in cast(Iterable[Pauli], range(4))
+            for prev_leg in cast(Iterable[Pauli], range(4))
+        }
+        rot_z_cache: dict[int, Matrix] = {}
+
+        def rot_z(phase: int) -> Matrix:
+            mat = rot_z_cache.get(phase)
+            if mat is None:
+                angle = 2 * np.pi * phase / PHASE_DENOM
+                mat = array([[exp(-1j * angle / 2), 0], [0, exp(1j * angle / 2)]])
+                rot_z_cache[phase] = mat
+            return mat
+
+        rot_zh_cache: dict[int, Matrix] = {}
+
+        def rot_zh(phase: int) -> Matrix:
+            mat = rot_zh_cache.get(phase)
+            if mat is None:
+                mat = rot_z(phase) @ H
+                rot_zh_cache[phase] = mat
+            return mat
+
+        rot_z_curr_prev_cache: dict[tuple[int, Pauli, Pauli], Matrix] = {}
+
+        def rot_z_curr_prev(phase: int, curr: Pauli, prev: Pauli) -> Matrix:
+            mat = rot_z_curr_prev_cache.get((phase, curr, prev))
+            if mat is None:
+                mat = rot_z(phase) @ basis_change_start[curr] @ basis_change_end[prev]
+                rot_z_curr_prev_cache[(phase, curr, prev)] = mat
+            return mat
+
+        # 3. Create spider graph with sufficient initial capacity.
+        n, m = self.num_qubits, self.num_gadgets
+        g = SpiderGraph(
+            edge_capacity=(n + m * (2 * n + 1)), spider_capacity=(2 * n + m * (n + 2))
+        )
+        # 4. Assemble the spider graph.
+        # The spiders currently on top of the circuit.
+        # Initialised to be the circuit inputs (exactly num_qubits spiders).
+        spiders = np.array(g.add_spiders((2,) * n), dtype=np.uint64)
+        # The basis change to be applied to the spiders on top of the circuit.
+        # The basis change for each spider is only applied when it is buried by
+        # the next spider (worst case it happens at the end, with an output spider).
+        prev_legs: PauliArray = np.zeros(n, dtype=np.uint8)
+        for gadget in self.iter_gadgets(fast=True):
+            phase = gadget.phase
+            if phase == 0:
+                # Zero phase, skip the gadget.
+                continue
+            legs: PauliArray = gadget.legs
+            # Boolean flags indicating whether a new spider is created at each qubit.
+            is_new_spider: BoolArray1D = (legs != prev_legs) & (legs != 0)
+            num_new_spiders = np.sum(is_new_spider)
+            if num_new_spiders == 0:
+                # Zero legs, skip the gadget.
+                continue
+            elif num_new_spiders == 1:
+                # Add new leg spider.
+                q = is_new_spider.argmax()
+                h = g.add_spider(2)
+                # Connect pre leg spider to new leg spider:
+                # (prev leg spider)--|prev end|--|new start|--|z rot|--(new leg spider)
+                g.add_edge(rot_z_curr_prev(phase, legs[q], prev_legs[q]), h, spiders[q])
+                # Update spiders and prev legs.
+                spiders[q] = h
+                prev_legs[q] = legs[q]
+            else:
+                # Add new leg spiders, new hub spider and new head spider.
+                new_inputs = np.where(
+                    is_new_spider,
+                    np.cumsum(is_new_spider, dtype=np.uint64) + g.num_spiders,
+                    spiders,
+                )
+                hub_spider, head_spider = g.add_spiders((2,) * (num_new_spiders + 2))[
+                    -2:
+                ]
+                # Connect prev leg spiders to new leg spiders:
+                # (prev leg spider)--|prev end|--|new start|--(new leg spider)
+                g.add_edges(
+                    (basis_change_middle[leg, prev_leg], h, t)
+                    for t, h, prev_leg, leg in zip(spiders, new_inputs, prev_legs, legs)
+                    if leg != prev_leg and leg != 0  # only where new spider created
+                )
+                # Connect new leg spiders to new hub spider:
+                # (new leg spider)--|H|--(new hub spider)
+                g.add_edges(
+                    (basis_change_middle[1, leg], hub_spider, t)
+                    for t, leg in zip(new_inputs, legs)
+                    if leg != 0
+                )
+                # Connect new hub spider to new head spider:
+                # (new hub spider)--|H|--|z rot|--(new head spider)
+                g.add_edge(rot_zh(phase), head_spider, hub_spider)
+                # Update spiders and prev legs.
+                spiders = new_inputs
+                prev_legs = np.where(is_new_spider, legs, prev_legs)
+        # Add output spiders.
+        output_spiders = g.add_spiders((2,) * n)
+        # Connect leg spiders to output spiders:
+        # (prev leg spider)--|prev end|--(output spider)
+        g.add_edges(
+            (basis_change_end[prev_leg], h, t)
+            for t, h, prev_leg in zip(spiders, output_spiders, prev_legs)
+        )
+        # 5. Trim spider graph capacity and return.
+        g.trim_capacity()
+        return g
 
     def iter_gadgets(self, *, fast: bool = False) -> Iterable[Gadget]:
         """
@@ -529,4 +643,25 @@ class Circuit:
                 )
             if np.any(codes >= 8):
                 raise ValueError("Communication codes must be in range(8).")
+            return True
+
+        def _validate_interleave_args(
+            self,
+            other: Circuit,
+            self_step: int,
+            other_step: int,
+            other_start: int = 0,
+        ) -> Literal[True]:
+            """Validates the arguments to the :meth:`interleaved` method."""
+            validate(other, Circuit)
+            validate(self_step, int)
+            validate(other_step, int)
+            if self.num_qubits != other.num_qubits:
+                raise ValueError("Mismatch in number of qubits.")
+            if not 0 < self_step <= self.num_gadgets:
+                raise ValueError(f"Invalid {self_step = }")
+            if not 0 < other_step <= other.num_gadgets:
+                raise ValueError(f"Invalid {other_step = }")
+            if not 0 <= other_start < other.num_gadgets:
+                raise ValueError(f"Invalid {other_start = }")
             return True

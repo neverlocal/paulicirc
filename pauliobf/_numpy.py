@@ -18,7 +18,6 @@ from collections.abc import Callable
 from typing import ParamSpec, TypeAlias, TypeVar
 import numpy as np
 import numba  # type: ignore
-import autoray  # type: ignore
 
 BoolArray1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.bool_]]
 """Type alias for 1D bool NumPy arrays."""

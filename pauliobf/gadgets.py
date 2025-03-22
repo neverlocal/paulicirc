@@ -333,3 +333,110 @@ class Gadget:
             if self.num_qubits != gadget.num_qubits:
                 raise ValueError("Mismatch in number of qubits between gadgets.")
             return True
+
+
+class Layer:
+    """A layer of Pauli gadgets with compatible legs."""
+
+    @staticmethod
+    def _legs_to_subset(legs: PauliArray) -> int:
+        """Convert legs to a subset index."""
+        subset = 0
+        for i, leg in enumerate(legs):
+            if leg != 0:
+                subset |= 1 << i
+        return subset
+
+    _phases: dict[int, Phase]
+    _legs: PauliArray
+    _leg_count: np.ndarray[tuple[int], np.dtype[np.uint32]]
+    # FIXME: remove limit to 2**32 gadgets per layer
+
+    def __new__(cls, num_qubits: int) -> Self:
+        """
+        Create an empty Pauli layer with the given number of qubits.
+
+        :meta public:
+        """
+        assert Layer._validate_new_args(num_qubits)
+        self = super().__new__(cls)
+        self._phases = {}
+        self._legs = np.zeros(num_qubits, dtype=np.uint8)
+        self._leg_count = np.zeros(num_qubits, dtype=np.uint32)
+        return self
+
+    @property
+    def num_qubits(self) -> int:
+        """Number of qubits for the Pauli layer."""
+        return len(self._legs)
+
+    @property
+    def legs(self) -> PauliArray:
+        """Legs of the Pauli layer."""
+        view = self._legs.view()
+        view.setflags(write=False)
+        return view.view()
+
+    def phase(self, legs: PauliArray) -> Phase | None:
+        """
+        Get the phase of the given legs in the layer, or :obj:`None` if the legs
+        are incompatible with the layer.
+        """
+        if not self.is_compatible_with(legs):
+            return None
+        return self._phases.get(Layer._legs_to_subset(legs), 0)
+
+    def is_compatible_with(self, legs: PauliArray) -> bool:
+        """Check if the legs are compatible with the current layer."""
+        assert self._validate_legs(legs)
+        self_legs = self._legs
+        return bool(np.all((self_legs == legs) | (self_legs == 0) | (legs == 0)))
+
+    def commutes_with(self, legs: PauliArray) -> bool:
+        """Check if the legs commute with the current layer."""
+        assert self._validate_legs(legs)
+        self_legs = self._legs
+        return bool(sum((self_legs != legs) & (self_legs != 0) & (legs != 0)) % 2 == 0)
+
+    def add_gadget(self, legs: PauliArray, phase: Phase) -> bool:
+        """Add a gadget to the layer."""
+        if not self.is_compatible_with(legs):
+            return False
+        phase %= PHASE_DENOM
+        if phase == 0:
+            return True
+        phases = self._phases
+        subset = Layer._legs_to_subset(legs)
+        if subset in phases:
+            new_phase = (phases[subset] + phase)%PHASE_DENOM
+            if new_phase == 0:
+                del phases[subset]
+                self._leg_count -= np.where(legs == 0, 0, 1)
+                self._legs = np.where(self._leg_count == 0, 0, self._legs)
+            else:
+                phases[subset] = new_phase
+            return True
+        else:
+            phases[subset] = phase
+            self._leg_count += np.where(legs == 0, 0, 1)
+            self._legs = np.where(legs == 0, self._legs, legs)
+        return True
+
+    if __debug__:
+
+        @staticmethod
+        def _validate_new_args(num_qubits: int) -> Literal[True]:
+            """Validate arguments to the :meth:`__new__` method."""
+            validate(num_qubits, int)
+            if num_qubits <= 0:
+                raise ValueError("Number of qubits must be strictly positive.")
+            return True
+
+        def _validate_legs(self, legs: PauliArray) -> Literal[True]:
+            """Validate gadget legs for use with this layer."""
+            validate(legs, PauliArray)
+            if len(legs) != self.num_qubits:
+                raise ValueError(
+                    "Legs must have the same length as the number of qubits."
+                )
+            return True

@@ -31,8 +31,17 @@ UInt16Array1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.uint16]]
 UInt8Array2D: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.uint8]]
 """Type alias for 2D uint8 NumPy arrays."""
 
+Complex128Array1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.complex128]]
+"""Type alias for 1D complex128 NumPy arrays."""
+
+Complex128Array2D: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.complex128]]
+"""Type alias for 2D complex128 NumPy arrays."""
+
 RNG: TypeAlias = np.random.Generator
 """Typa alias for a NumPy random number generator."""
+
+ShapeT = TypeVar("ShapeT", bound=tuple[int, ...])
+"""Type variable for the shape of NumPy arrays."""
 
 _numba_jit = numba.jit(nopython=True, cache=True)
 """Decorator to apply :func:`numba.jit` with desired settings."""
@@ -94,3 +103,15 @@ def interleave(
         res[-r_a - r_b + step_a : -r_a + step_a, :] = b[-r_b:, :]
         res[-r_a + step_a :, :] = a[-r_a + step_a :, :]
     return res_to_return
+
+
+def normalise_phase(
+    array: np.ndarray[ShapeT, np.dtype[np.complex128]],
+    *,
+    tol: float = 1e-8,
+) -> None:
+    """Normalises the phase of a complex array (in place)."""
+    assert tol > 0
+    idx = np.argmax(abs(array) >= tol)
+    val = array.flatten()[idx]
+    array /= abs(val)/val

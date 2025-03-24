@@ -20,7 +20,7 @@ from typing import Literal, Self, TypeAlias
 
 import numpy as np
 
-from ._numpy import RNG
+from ._numpy import RNG, Complex128Array1D, Complex128Array2D, normalise_phase
 from .gadgets import PHASE_DENOM, Gadget, Layer, PauliArray, Phase
 from .circuits import Circuit
 
@@ -142,6 +142,34 @@ class CircuitBuilder:
         return Circuit.from_gadgets(
             g for layer in self for g in rng.permutation(list(layer))  # type: ignore[arg-type]
         )
+
+    def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
+        """Returns the unitary matrix associated to the circuit being built."""
+        res = np.eye(2**self.num_qubits, dtype=np.complex128)
+        for layer in self:
+            for gadget in layer:
+                res = gadget.unitary(_normalise_phase=False) @ res
+        if _normalise_phase:
+            normalise_phase(res)
+        return res
+
+    def statevec(
+        self,
+        input: Complex128Array1D,
+        _normalise_phase: bool = False
+    ) -> Complex128Array1D:
+        """
+        Computes the statevector resulting from the application of the circuit being
+        built to the given input statevector.
+        """
+        assert validate(input, Complex128Array1D)
+        res = input
+        for layer in self:
+            for gadget in layer:
+                res = gadget.unitary(_normalise_phase=False) @ res
+        if _normalise_phase:
+            normalise_phase(res)
+        return res
 
     def rx(self, angle: PhaseLike, q: QubitIdx) -> None:
         """Adds a Z rotation on the given qubit."""

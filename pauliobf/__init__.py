@@ -15,7 +15,9 @@
 
 __version__ = "0.0.1"
 
-from .gadgets import Gadget
+from .gadgets import Gadget, Layer
 from .circuits import Circuit
+from .builders import CircuitBuilder
 
-__all__ = ("Gadget", "Circuit")
+
+__all__ = ("Gadget", "Layer", "Circuit", "CircuitBuilder")

@@ -14,12 +14,15 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from fractions import Fraction
 from typing import Literal, Self, TypeAlias
 
 import numpy as np
+
+from ._numpy import RNG
 from .gadgets import PHASE_DENOM, Gadget, Layer, PauliArray, Phase
+from .circuits import Circuit
 
 if __debug__:
     from typing_validation import validate
@@ -36,6 +39,7 @@ Type alias for values which can be used to specify a phase:
 
 QubitIdx: TypeAlias = int
 """Type alias for the index of a qubit in a circuit."""
+
 
 class CircuitBuilder:
     """Utility class to help building gadget circuits."""
@@ -74,7 +78,7 @@ class CircuitBuilder:
         self,
         phase: PhaseLike,
         legs: PauliArray | str,
-        qubits: QubitIdx | Sequence[QubitIdx] | None = None
+        qubits: QubitIdx | Sequence[QubitIdx] | None = None,
     ) -> int:
         """
         Add a gadget to the circuit.
@@ -113,6 +117,32 @@ class CircuitBuilder:
         layers.append(new_layer)
         return len(layers) - 1
 
+    def __iter__(self) -> Iterator[Layer]:
+        """Iterates over the layers in the ciruit builder."""
+        return iter(self._layers)
+
+    def __len__(self) -> int:
+        """The number of layers currently in the circuit."""
+        return len(self._layers)
+
+    def circuit(self) -> Circuit:
+        """
+        Returns a circuit constructed from the current gadget layers,
+        where the gadgets for each layer are listed in insertion order.
+        """
+        return Circuit.from_gadgets(g for layer in self for g in layer)
+
+    def random_circuit(self, *, rng: int | RNG | None) -> Circuit:
+        """
+        Returns a circuit constructed from the current gadget layers,
+        where the gadgets for each layer are listed in random order.
+        """
+        if not isinstance(rng, RNG):
+            rng = np.random.default_rng(rng)
+        return Circuit.from_gadgets(
+            g for layer in self for g in rng.permutation(list(layer))  # type: ignore[arg-type]
+        )
+
     def rx(self, angle: PhaseLike, q: QubitIdx) -> None:
         """Adds a Z rotation on the given qubit."""
         self.add_gadget(angle, "X", q)
@@ -127,39 +157,39 @@ class CircuitBuilder:
 
     def x(self, q: QubitIdx) -> None:
         """Adds a X gate on the given qubit."""
-        self.rx(PHASE_DENOM//2, q)
+        self.rx(PHASE_DENOM // 2, q)
 
     def z(self, q: QubitIdx) -> None:
         """Adds a Z gate on the given qubit."""
-        self.rz(PHASE_DENOM//2, q)
+        self.rz(PHASE_DENOM // 2, q)
 
     def y(self, q: QubitIdx) -> None:
         """Adds a Y gate on the given qubit."""
-        self.ry(PHASE_DENOM//2, q)
+        self.ry(PHASE_DENOM // 2, q)
 
     def sx(self, q: QubitIdx) -> None:
         """Adds a √X gate on the given qubit."""
-        self.rx(PHASE_DENOM//4, q)
+        self.rx(PHASE_DENOM // 4, q)
 
     def sx_dag(self, q: QubitIdx) -> None:
         """Adds a √X† gate on the given qubit."""
-        self.rx(-PHASE_DENOM//4, q)
+        self.rx(-PHASE_DENOM // 4, q)
 
     def s(self, q: QubitIdx) -> None:
         """Adds a S gate on the given qubit."""
-        self.rz(PHASE_DENOM//4, q)
+        self.rz(PHASE_DENOM // 4, q)
 
     def s_dag(self, q: QubitIdx) -> None:
         """Adds a S† gate on the given qubit."""
-        self.rz(-PHASE_DENOM//4, q)
+        self.rz(-PHASE_DENOM // 4, q)
 
     def t(self, q: QubitIdx) -> None:
         """Adds a T gate on the given qubit."""
-        self.rz(PHASE_DENOM//8, q)
+        self.rz(PHASE_DENOM // 8, q)
 
     def t_dag(self, q: QubitIdx) -> None:
         """Adds a T† gate on the given qubit."""
-        self.rz(-PHASE_DENOM//48, q)
+        self.rz(-PHASE_DENOM // 48, q)
 
     def h(self, q: QubitIdx, *, xzx: bool = False) -> None:
         """
@@ -205,7 +235,7 @@ class CircuitBuilder:
         """Adds a CZ gate to the given control and target qubits."""
         self.s_dag(c)
         self.s_dag(t)
-        self.add_gadget(PHASE_DENOM//4, "ZZ", (c, t))
+        self.add_gadget(PHASE_DENOM // 4, "ZZ", (c, t))
 
     def cy(self, c: QubitIdx, t: QubitIdx) -> None:
         """Adds a CY gate to the given control and target qubits."""
@@ -219,17 +249,17 @@ class CircuitBuilder:
         self.s(t)
         self.sx(t)
         self.s_dag(t)
-        self.add_gadget(PHASE_DENOM//4, "ZZ", (c, t))
+        self.add_gadget(PHASE_DENOM // 4, "ZZ", (c, t))
         self.sx(c)
         self.sx_dag(t)
         self.s_dag(c)
         self.s_dag(t)
-        self.add_gadget(PHASE_DENOM//4, "ZZ", (c, t))
+        self.add_gadget(PHASE_DENOM // 4, "ZZ", (c, t))
         self.sx_dag(c)
         self.sx(t)
         self.z(c)
         self.s_dag(t)
-        self.add_gadget(PHASE_DENOM//4, "ZZ", (c, t))
+        self.add_gadget(PHASE_DENOM // 4, "ZZ", (c, t))
         self.s_dag(t)
         self.s(t)
 
@@ -243,13 +273,13 @@ class CircuitBuilder:
 
     def ccz(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
         """Adds a CCZ gate to the given control and target qubits."""
-        self.add_gadget(PHASE_DENOM//8, "Z__", (c0, c1, t))
-        self.add_gadget(PHASE_DENOM//8, "_Z_", (c0, c1, t))
-        self.add_gadget(PHASE_DENOM//8, "__Z", (c0, c1, t))
-        self.add_gadget(-PHASE_DENOM//8, "ZZ_", (c0, c1, t))
-        self.add_gadget(-PHASE_DENOM//8, "Z_Z", (c0, c1, t))
-        self.add_gadget(-PHASE_DENOM//8, "_ZZ", (c0, c1, t))
-        self.add_gadget(PHASE_DENOM//8, "ZZZ", (c0, c1, t))
+        self.add_gadget(PHASE_DENOM // 8, "Z__", (c0, c1, t))
+        self.add_gadget(PHASE_DENOM // 8, "_Z_", (c0, c1, t))
+        self.add_gadget(PHASE_DENOM // 8, "__Z", (c0, c1, t))
+        self.add_gadget(-PHASE_DENOM // 8, "ZZ_", (c0, c1, t))
+        self.add_gadget(-PHASE_DENOM // 8, "Z_Z", (c0, c1, t))
+        self.add_gadget(-PHASE_DENOM // 8, "_ZZ", (c0, c1, t))
+        self.add_gadget(PHASE_DENOM // 8, "ZZZ", (c0, c1, t))
 
     def ccy(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
         """Adds a CCY gate to the given control and target qubits."""

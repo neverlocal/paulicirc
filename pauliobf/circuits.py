@@ -286,6 +286,16 @@ class Circuit:
         circ[1::2] = gadgets
         return circ
 
+    @classmethod
+    def from_gadgets(
+        cls, gadgets: Iterable[Gadget], num_qubits: int | None = None
+    ) -> Self:
+        """Constructs a circuit from the given gadgets."""
+        gadgets = list(gadgets)
+        assert Circuit.__validate_gadgets(gadgets, num_qubits)
+        data = np.array([g.data for g in gadgets], dtype=np.uint8)
+        return cls(data, num_qubits)
+
     _data: CircuitData
     _num_qubits: int
 
@@ -498,23 +508,6 @@ class Circuit:
         g.trim_capacity()
         return g
 
-    def iter_gadgets(self, *, fast: bool = False) -> Iterable[Gadget]:
-        """
-        Iterates over the gadgets in the circuit.
-
-        If ``fast`` is set to ``True``, the gadgets yielded are ephemeral:
-        they should not be stored, as the same object will be reused in each iteration.
-        """
-        if len(self._data) == 0:
-            return
-        if not fast:
-            yield from iter(self)
-            return
-        g = Gadget(self._data[0], self._num_qubits, _ephemeral=True)
-        for row in self._data:
-            g._data = row
-            yield g
-
     def random_commutation_codes(
         self, *, non_zero: bool = False, rng: int | RNG | None = None
     ) -> CommutationCodeArray:
@@ -537,6 +530,23 @@ class Circuit:
         codes = np.asarray(codes, dtype=np.uint8)
         assert self._validate_commutation_codes(codes)
         return Circuit(commute(self._data, codes), self._num_qubits)
+
+    def iter_gadgets(self, *, fast: bool = False) -> Iterable[Gadget]:
+        """
+        Iterates over the gadgets in the circuit.
+
+        If ``fast`` is set to ``True``, the gadgets yielded are ephemeral:
+        they should not be stored, as the same object will be reused in each iteration.
+        """
+        if len(self._data) == 0:
+            return
+        if not fast:
+            yield from iter(self)
+            return
+        g = Gadget(self._data[0], self._num_qubits, _ephemeral=True)
+        for row in self._data:
+            g._data = row
+            yield g
 
     def __iter__(self) -> Iterator[Gadget]:
         """
@@ -684,4 +694,20 @@ class Circuit:
                 raise ValueError(f"Invalid {other_step = }")
             if not 0 <= other_start < other.num_gadgets:
                 raise ValueError(f"Invalid {other_start = }")
+            return True
+
+        @staticmethod
+        def __validate_gadgets(
+            gadgets: Sequence[Gadget], num_qubits: int | None
+        ) -> Literal[True]:
+            validate(gadgets, Sequence[Gadget])
+            if num_qubits is None:
+                if not gadgets:
+                    raise ValueError(
+                        "At least one gadget must be supplied if num_qubits is omitted."
+                    )
+                num_qubits = gadgets[0].num_qubits
+            for gadget in gadgets:
+                if gadget.num_qubits != num_qubits:
+                    raise ValueError("All gadgets must have the same number of qubits.")
             return True

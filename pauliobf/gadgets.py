@@ -14,6 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
+from collections.abc import Iterator
 from fractions import Fraction
 from typing import (
     Final,
@@ -107,6 +108,11 @@ def _get_gadget_legs(g: GadgetData) -> PauliArray:
     ) >> np.tile(_LEG_BYTE_SHIFTS, n)
 
 
+def _zero_gadget_data(num_qubits: int) -> GadgetData:
+    """Returns blank data for a gadget with the given number of qubits."""
+    return np.zeros(-(-num_qubits // 4), dtype=np.uint8)
+
+
 def _set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
     """
     Sets leg information in the given gadget data.
@@ -193,6 +199,14 @@ class Gadget:
         if (PHASE_DENOM // 2) % den == 0:
             return num * PHASE_DENOM // 2 // den
         return float2phase(num / den)
+
+    @staticmethod
+    def data(legs: PauliArray, phase: Phase) -> GadgetData:
+        """Assembles gadget data from the given legs and phase."""
+        g = _zero_gadget_data(len(legs))
+        _set_gadget_legs(g, legs)
+        set_phase(g, phase)
+        return g
 
     _data: GadgetData
     _num_qubits: int
@@ -318,6 +332,9 @@ class Gadget:
                     raise ValueError("Number of qubits must be non-negative.")
                 if num_qubits > data.shape[0] * 4:
                     raise ValueError("Number of qubits exceeds circuit width.")
+            legs = _get_gadget_legs(data)
+            if any(legs[num_qubits:] != 0):
+                raise ValueError("Legs on excess qubits must be zeroed out.")
             return True
 
         def _validate_legs_value(self, legs: PauliArray) -> Literal[True]:
@@ -346,6 +363,14 @@ class Layer:
             if leg != 0:
                 subset |= 1 << i
         return subset
+
+    @staticmethod
+    def _subset_to_legs(subset: int, legs: PauliArray) -> PauliArray:
+        return np.where(
+            np.fromiter((subset & (1 << x) for x in range(len(legs))), dtype=np.bool_),
+            legs,
+            0,
+        )
 
     _phases: dict[int, Phase]
     _legs: PauliArray
@@ -408,7 +433,7 @@ class Layer:
         phases = self._phases
         subset = Layer._legs_to_subset(legs)
         if subset in phases:
-            new_phase = (phases[subset] + phase)%PHASE_DENOM
+            new_phase = (phases[subset] + phase) % PHASE_DENOM
             if new_phase == 0:
                 del phases[subset]
                 self._leg_count -= np.where(legs == 0, 0, 1)
@@ -421,6 +446,21 @@ class Layer:
             self._leg_count += np.where(legs == 0, 0, 1)
             self._legs = np.where(legs == 0, self._legs, legs)
         return True
+
+    def __iter__(self) -> Iterator[Gadget]:
+        """
+        Iterates over the gadgets in the layer, in insertion order.
+
+        :meta public:
+        """
+        legs, num_qubits = self._legs, self.num_qubits
+        for subset, phase in self._phases.items():
+            subset_legs = Layer._subset_to_legs(subset, legs)
+            yield Gadget(Gadget.data(subset_legs, phase), num_qubits)
+
+    def __len__(self) -> int:
+        """The number of gadgets (with non-zero phase) in this layer."""
+        return len(self._phases)
 
     if __debug__:
 

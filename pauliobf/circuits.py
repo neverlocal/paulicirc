@@ -546,9 +546,7 @@ class Circuit:
         return res
 
     def statevec(
-        self,
-        input: Complex128Array1D,
-        _normalise_phase: bool = False
+        self, input: Complex128Array1D, _normalise_phase: bool = False
     ) -> Complex128Array1D:
         """
         Computes the statevector resulting from the application of this gadget circuit
@@ -561,7 +559,6 @@ class Circuit:
         if _normalise_phase:
             normalise_phase(res)
         return res
-
 
     def iter_gadgets(self, *, fast: bool = False) -> Iterable[Gadget]:
         """

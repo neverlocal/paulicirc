@@ -25,7 +25,7 @@ from typing import (
     final,
 )
 import numpy as np
-from scipy.linalg import expm # type: ignore[import-untyped]
+from scipy.linalg import expm  # type: ignore[import-untyped]
 
 from ._numpy import (
     Complex128Array1D,
@@ -95,7 +95,7 @@ PAULI_MATS: Final[tuple[Complex128Array2D, ...]] = (
     np.array([[1, 0], [0, 1]], dtype=np.complex128),
     np.array([[0, 1], [1, 0]], dtype=np.complex128),
     np.array([[1, 0], [0, -1]], dtype=np.complex128),
-    np.array([[0, -1j], [1j, 0]], dtype=np.complex128)
+    np.array([[0, -1j], [1j, 0]], dtype=np.complex128),
 )
 """The four Pauli matrices."""
 
@@ -121,7 +121,7 @@ def _get_gadget_legs(g: GadgetData) -> PauliArray:
 
 def _zero_gadget_data(num_qubits: int) -> GadgetData:
     """Returns blank data for a gadget with the given number of qubits."""
-    return np.zeros(-(-num_qubits // 4)+PHASE_NBYTES, dtype=np.uint8)
+    return np.zeros(-(-num_qubits // 4) + PHASE_NBYTES, dtype=np.uint8)
 
 
 def _set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
@@ -313,7 +313,7 @@ class Gadget:
             return "0"
         num_str = "" if num == 1 else str(num)
         if den == 1:
-            return f"{num_str}π" # the only case should be 'π'
+            return f"{num_str}π"  # the only case should be 'π'
         return f"{num_str}π/{str(den)}"
 
     def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
@@ -322,15 +322,13 @@ class Gadget:
         kron_prod = PAULI_MATS[legs[0]]
         for leg in legs[1:]:
             kron_prod = np.kron(kron_prod, PAULI_MATS[leg])
-        res: Complex128Array2D = expm(-0.5j*self.phase_float*kron_prod)
+        res: Complex128Array2D = expm(-0.5j * self.phase_float * kron_prod)
         if _normalise_phase:
             normalise_phase(res)
         return res
 
     def statevec(
-        self,
-        input: Complex128Array1D,
-        _normalise_phase: bool = False
+        self, input: Complex128Array1D, _normalise_phase: bool = False
     ) -> Complex128Array1D:
         """
         Computes the statevector resulting from the application of this gadget
@@ -373,7 +371,7 @@ class Gadget:
                 validate(num_qubits, int)
                 if num_qubits < 0:
                     raise ValueError("Number of qubits must be non-negative.")
-                if num_qubits > (data.shape[0]-PHASE_NBYTES) * 4:
+                if num_qubits > (data.shape[0] - PHASE_NBYTES) * 4:
                     raise ValueError("Number of qubits exceeds circuit width.")
             legs = _get_gadget_legs(data)
             if any(legs[num_qubits:] != 0):

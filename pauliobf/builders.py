@@ -159,9 +159,7 @@ class CircuitBuilder:
         return res
 
     def statevec(
-        self,
-        input: Complex128Array1D,
-        _normalise_phase: bool = False
+        self, input: Complex128Array1D, _normalise_phase: bool = False
     ) -> Complex128Array1D:
         """
         Computes the statevector resulting from the application of the circuit being

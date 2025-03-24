@@ -114,4 +114,4 @@ def normalise_phase(
     assert tol > 0
     idx = np.argmax(abs(array) >= tol)
     val = array.flatten()[idx]
-    array /= abs(val)/val
+    array *= abs(val)/val

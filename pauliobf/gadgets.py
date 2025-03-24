@@ -121,7 +121,7 @@ def _get_gadget_legs(g: GadgetData) -> PauliArray:
 
 def _zero_gadget_data(num_qubits: int) -> GadgetData:
     """Returns blank data for a gadget with the given number of qubits."""
-    return np.zeros(-(-num_qubits // 4), dtype=np.uint8)
+    return np.zeros(-(-num_qubits // 4)+PHASE_NBYTES, dtype=np.uint8)
 
 
 def _set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
@@ -212,7 +212,7 @@ class Gadget:
         return float2phase(num / den)
 
     @staticmethod
-    def data(legs: PauliArray, phase: Phase) -> GadgetData:
+    def assemble_data(legs: PauliArray, phase: Phase) -> GadgetData:
         """Assembles gadget data from the given legs and phase."""
         g = _zero_gadget_data(len(legs))
         _set_gadget_legs(g, legs)
@@ -308,7 +308,13 @@ class Gadget:
         String representation of the gadget phase, as a fraction of :math:`\pi`.
         """
         phase_frac = self.phase_frac
-        return f"{phase_frac.numerator}π/{phase_frac.denominator}"
+        num, den = phase_frac.numerator, phase_frac.denominator
+        if num == 0:
+            return "0"
+        num_str = "" if num == 1 else str(num)
+        if den == 1:
+            return f"{num_str}π" # the only case should be 'π'
+        return f"{num_str}π/{str(den)}"
 
     def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget."""
@@ -316,7 +322,7 @@ class Gadget:
         kron_prod = PAULI_MATS[legs[0]]
         for leg in legs[1:]:
             kron_prod = np.kron(kron_prod, PAULI_MATS[leg])
-        res: Complex128Array2D = expm(0.5j*self.phase_float*kron_prod)
+        res: Complex128Array2D = expm(-0.5j*self.phase_float*kron_prod)
         if _normalise_phase:
             normalise_phase(res)
         return res
@@ -367,7 +373,7 @@ class Gadget:
                 validate(num_qubits, int)
                 if num_qubits < 0:
                     raise ValueError("Number of qubits must be non-negative.")
-                if num_qubits > data.shape[0] * 4:
+                if num_qubits > (data.shape[0]-PHASE_NBYTES) * 4:
                     raise ValueError("Number of qubits exceeds circuit width.")
             legs = _get_gadget_legs(data)
             if any(legs[num_qubits:] != 0):
@@ -439,6 +445,11 @@ class Layer:
         view.setflags(write=False)
         return view.view()
 
+    @property
+    def leg_paulistr(self) -> str:
+        """Paulistring representation of the layer's legs."""
+        return "".join(PAULI_CHARS[p] for p in self.legs)
+
     def phase(self, legs: PauliArray) -> Phase | None:
         """
         Get the phase of the given legs in the layer, or :obj:`None` if the legs
@@ -458,7 +469,12 @@ class Layer:
         """Check if the legs commute with the current layer."""
         assert self._validate_legs(legs)
         self_legs = self._legs
-        return bool(sum((self_legs != legs) & (self_legs != 0) & (legs != 0)) % 2 == 0)
+        for subset in self._phases:
+            subset_legs = Layer._subset_to_legs(subset, self_legs)
+            ovlp = sum((subset_legs != legs) & (subset_legs != 0) & (subset_legs != 0))
+            if ovlp % 2 != 0:
+                return False
+        return True
 
     def add_gadget(self, legs: PauliArray, phase: Phase) -> bool:
         """Add a gadget to the layer."""
@@ -472,15 +488,25 @@ class Layer:
         if subset in phases:
             new_phase = (phases[subset] + phase) % PHASE_DENOM
             if new_phase == 0:
+                # print("add_gadget", legs, phase)
+                # print(list(self))
+                # print(f"{subset:0{self.num_qubits}b}")
+                # print(phases[subset], phase, new_phase)
+                # print(self._legs)
+                # print(self._leg_count)
                 del phases[subset]
-                self._leg_count -= np.where(legs == 0, 0, 1)
+                self._leg_count -= np.where(legs == 0, np.uint32(0), np.uint32(1))
                 self._legs = np.where(self._leg_count == 0, 0, self._legs)
+                # print(self._legs)
+                # print(self._leg_count)
+                # print(list(self))
+                # print()
             else:
                 phases[subset] = new_phase
             return True
         else:
             phases[subset] = phase
-            self._leg_count += np.where(legs == 0, 0, 1)
+            self._leg_count += np.where(legs == 0, np.uint32(0), np.uint32(1))
             self._legs = np.where(legs == 0, self._legs, legs)
         return True
 
@@ -493,11 +519,17 @@ class Layer:
         legs, num_qubits = self._legs, self.num_qubits
         for subset, phase in self._phases.items():
             subset_legs = Layer._subset_to_legs(subset, legs)
-            yield Gadget(Gadget.data(subset_legs, phase), num_qubits)
+            yield Gadget(Gadget.assemble_data(subset_legs, phase), num_qubits)
 
     def __len__(self) -> int:
         """The number of gadgets (with non-zero phase) in this layer."""
         return len(self._phases)
+
+    def __repr__(self) -> str:
+        legs_str = self.leg_paulistr
+        if len(legs_str) > 16:
+            legs_str = legs_str[:8] + "..." + legs_str[-8:]
+        return f"<Layer: {legs_str}, {len(self)} gadgets>"
 
     if __debug__:
 

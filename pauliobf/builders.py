@@ -85,6 +85,7 @@ class CircuitBuilder:
 
         Returns the index of the layer to which the gadget was appended.
         """
+        m, n = self.num_layers, self._num_qubits
         if isinstance(phase, Phase):
             phase %= PHASE_DENOM
         elif isinstance(phase, float):
@@ -102,20 +103,24 @@ class CircuitBuilder:
                 if isinstance(qubits, QubitIdx):
                     qubits = (qubits,)
                 # TODO: validate legs and qubits
-                legs = np.zeros(self._num_qubits, dtype=np.uint8)
+                legs = np.zeros(n, dtype=np.uint8)
                 for p, q in zip(paulis, qubits, strict=True):
                     legs[q] = PAULI_CHARS.index(p)
         layers = self._layers
-        for i in range(len(self._layers))[::-1]:
+        layer_idx = m
+        for i in range(m)[::-1]:
             layer = layers[i]
-            if layer.add_gadget(legs, phase):
-                return i
-            if not layer.commutes_with(legs):
+            if layer.is_compatible_with(legs):
+                layer_idx = i
+            elif not layer.commutes_with(legs):
                 break
-        new_layer = Layer(self._num_qubits)
+        if layer_idx < m:
+            layers[layer_idx].add_gadget(legs, phase)
+            return layer_idx
+        new_layer = Layer(n)
         new_layer.add_gadget(legs, phase)
         layers.append(new_layer)
-        return len(layers) - 1
+        return m
 
     def __iter__(self) -> Iterator[Layer]:
         """Iterates over the layers in the ciruit builder."""
@@ -269,35 +274,21 @@ class CircuitBuilder:
         """Adds a CY gate to the given control and target qubits."""
         self.sx(t)
         self.cz(c, t)
-        self.sx(t)
+        self.sx_dag(t)
 
     def swap(self, c: QubitIdx, t: QubitIdx) -> None:
         """Adds a SWAP gate to the given control and target qubits."""
-        # Simplified from cx(c, t) >> cx(t, c) >> cx(c, t)
-        self.s(t)
-        self.sx(t)
-        self.s_dag(t)
-        self.add_gadget(PHASE_DENOM // 4, "ZZ", (c, t))
-        self.sx(c)
-        self.sx_dag(t)
-        self.s_dag(c)
-        self.s_dag(t)
-        self.add_gadget(PHASE_DENOM // 4, "ZZ", (c, t))
-        self.sx_dag(c)
-        self.sx(t)
-        self.z(c)
-        self.s_dag(t)
-        self.add_gadget(PHASE_DENOM // 4, "ZZ", (c, t))
-        self.s_dag(t)
-        self.s(t)
+        self.cx(c, t)
+        self.cx(t, c)
+        self.cx(c, t)
 
     def ccx(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
         """Adds a CCX gate to the given control and target qubits."""
         self.s(t)
         self.sx(t)
         self.ccz(c0, c1, t)
-        self.sx(t)
-        self.s(t)
+        self.sx_dag(t)
+        self.s_dag(t)
 
     def ccz(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
         """Adds a CCZ gate to the given control and target qubits."""
@@ -313,19 +304,17 @@ class CircuitBuilder:
         """Adds a CCY gate to the given control and target qubits."""
         self.sx(t)
         self.ccz(c0, c1, t)
-        self.sx(t)
+        self.sx_dag(t)
 
     def cswap(self, c: QubitIdx, t0: QubitIdx, t1: QubitIdx) -> None:
         """Adds a CSWAP gate to the given control and target qubits."""
-        self.s(t0)
-        self.sx(t0)
-        self.cz(t0, t1)
-        self.sx_dag(t0)
+        self.cx(t1, t0)
         self.ccx(c, t0, t1)
-        self.sx(t0)
-        self.cz(t0, t1)
-        self.sx_dag(t0)
-        self.s_dag(t0)
+        self.cx(t1, t0)
+
+    def __repr__(self) -> str:
+        m, n = self.num_layers, self.num_qubits
+        return f"<CircuitBuilder: {m} layers, {n} qubits>"
 
     if __debug__:
 

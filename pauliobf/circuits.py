@@ -296,7 +296,9 @@ class Circuit:
         """Constructs a circuit from the given gadgets."""
         gadgets = list(gadgets)
         assert Circuit.__validate_gadgets(gadgets, num_qubits)
-        data = np.array([g.data for g in gadgets], dtype=np.uint8)
+        data = np.array([g._data for g in gadgets], dtype=np.uint8)
+        if num_qubits is None:
+            num_qubits = gadgets[0].num_qubits
         return cls(data, num_qubits)
 
     _data: CircuitData
@@ -632,7 +634,7 @@ class Circuit:
 
     def __repr__(self) -> str:
         m, n = self.num_gadgets, self.num_qubits
-        return f"<GadgetCircuit: {m} gadgets, {n} qubits>"
+        return f"<Circuit: {m} gadgets, {n} qubits>"
 
     if __debug__:
 

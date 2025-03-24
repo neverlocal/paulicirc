@@ -25,9 +25,13 @@ from typing import (
     final,
 )
 import numpy as np
+from scipy.linalg import expm # type: ignore[import-untyped]
 
 from ._numpy import (
+    Complex128Array1D,
+    Complex128Array2D,
     UInt8Array1D,
+    normalise_phase,
     numba_jit,
 )
 
@@ -87,6 +91,13 @@ The subdivision of :math:`2\pi` used for phases.
 Currently set to 65536, so that phases are integer multiples of :math:`\pi/32768`.
 """
 
+PAULI_MATS: Final[tuple[Complex128Array2D, ...]] = (
+    np.array([[1, 0], [0, 1]], dtype=np.complex128),
+    np.array([[0, 1], [1, 0]], dtype=np.complex128),
+    np.array([[1, 0], [0, -1]], dtype=np.complex128),
+    np.array([[0, -1j], [1j, 0]], dtype=np.complex128)
+)
+"""The four Pauli matrices."""
 
 _LEG_BYTE_SHIFTS = np.arange(6, -1, -2, dtype=np.uint8)
 """Bit shifts ``[6, 4, 2, 0]`` used on a byte to extract leg information."""
@@ -280,7 +291,7 @@ class Gadget:
     def phase_float(self) -> float:
         r"""
         Approximate representation of the gadget phase,
-        as a floating point number :math:`0 \leq x < \pi/32768`.
+        as a floating point number :math:`0 \leq x < 2\pi`.
         """
         return Gadget.phase2float(self.phase)
 
@@ -298,6 +309,32 @@ class Gadget:
         """
         phase_frac = self.phase_frac
         return f"{phase_frac.numerator}π/{phase_frac.denominator}"
+
+    def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
+        """Returns the unitary matrix associated to this Pauli gadget."""
+        legs = self.legs
+        kron_prod = PAULI_MATS[legs[0]]
+        for leg in legs[1:]:
+            kron_prod = np.kron(kron_prod, PAULI_MATS[leg])
+        res: Complex128Array2D = expm(0.5j*self.phase_float*kron_prod)
+        if _normalise_phase:
+            normalise_phase(res)
+        return res
+
+    def statevec(
+        self,
+        input: Complex128Array1D,
+        _normalise_phase: bool = False
+    ) -> Complex128Array1D:
+        """
+        Computes the statevector resulting from the application of this gadget
+        to the given input statevector.
+        """
+        assert validate(input, Complex128Array1D)
+        res = self.unitary(_normalise_phase=False) @ input
+        if _normalise_phase:
+            normalise_phase(res)
+        return res
 
     def clone(self) -> Self:
         """Creates a persistent copy of the gadget."""

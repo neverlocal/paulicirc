@@ -21,10 +21,13 @@ from .spider_graphs import Matrix, SpiderGraph
 from ._numpy import (
     RNG,
     BoolArray1D,
+    Complex128Array1D,
+    Complex128Array2D,
     UInt16Array1D,
     UInt8Array1D,
     UInt8Array2D,
     interleave,
+    normalise_phase,
     numba_jit,
 )
 from .gadgets import (
@@ -530,6 +533,33 @@ class Circuit:
         codes = np.asarray(codes, dtype=np.uint8)
         assert self._validate_commutation_codes(codes)
         return Circuit(commute(self._data, codes), self._num_qubits)
+
+    def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
+        """Returns the unitary matrix associated to this Pauli gadget circuit."""
+        res = np.eye(2**self.num_qubits, dtype=np.complex128)
+        for gadget in self:
+            res = gadget.unitary(_normalise_phase=False) @ res
+        if _normalise_phase:
+            normalise_phase(res)
+        return res
+
+    def statevec(
+        self,
+        input: Complex128Array1D,
+        _normalise_phase: bool = False
+    ) -> Complex128Array1D:
+        """
+        Computes the statevector resulting from the application of this gadget circuit
+        to the given input statevector.
+        """
+        assert validate(input, Complex128Array1D)
+        res = input
+        for gadget in self:
+            res = gadget.unitary(_normalise_phase=False) @ res
+        if _normalise_phase:
+            normalise_phase(res)
+        return res
+
 
     def iter_gadgets(self, *, fast: bool = False) -> Iterable[Gadget]:
         """

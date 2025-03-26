@@ -367,7 +367,9 @@ class Gadget:
         ) -> Literal[True]:
             """Validates the arguments of the :meth:`__new__` method."""
             validate(data, GadgetData)
-            if num_qubits is not None:
+            if num_qubits is None:
+                num_qubits = 4*(len(data)-PHASE_NBYTES)
+            else:
                 validate(num_qubits, int)
                 if num_qubits < 0:
                     raise ValueError("Number of qubits must be non-negative.")

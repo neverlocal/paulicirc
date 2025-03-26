@@ -1,5 +1,18 @@
 """Circuits of Pauli gadgets."""
 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Lesser General Public License for more details.
+
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator
 from typing import (
@@ -42,6 +55,7 @@ from .gadgets import (
     overlap,
     phase2float,
     set_phase,
+    _get_gadget_legs,
 )
 
 if __debug__:
@@ -108,13 +122,21 @@ def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
     return data
 
 
-_convert_xz0_yzx = numba_jit(euler.convert_xzx_yzx)
-_convert_xz0_zyx = numba_jit(euler.convert_xzx_zyx)
-_convert_xz0_zxy = numba_jit(euler.convert_xzx_zxy)
-_convert_xz0_yxy = numba_jit(euler.convert_xzx_yxy)
-_convert_xz0_yzy = numba_jit(euler.convert_xzx_yzy)
-_convert_xz0_xyx = numba_jit(euler.convert_xzx_xyx)
-_convert_xz0_zyz = numba_jit(euler.convert_xzx_zyz)
+_convert_0zx_yxz = numba_jit(euler.convert_xzx_yxz)
+_convert_0zx_xyz = numba_jit(euler.convert_xzx_xyz)
+_convert_0zx_xzy = numba_jit(euler.convert_xzx_xzy)
+_convert_0zx_yxy = numba_jit(euler.convert_xzx_yxy)
+_convert_0zx_yzy = numba_jit(euler.convert_xzx_yzy)
+_convert_0zx_xyx = numba_jit(euler.convert_xzx_xyx)
+_convert_0zx_zyz = numba_jit(euler.convert_xzx_zyz)
+
+_convert_0xz_yzx = numba_jit(euler.convert_zxz_yzx)
+_convert_0xz_zyx = numba_jit(euler.convert_zxz_zyx)
+_convert_0xz_zxy = numba_jit(euler.convert_zxz_zxy)
+_convert_0xz_yzy = numba_jit(euler.convert_zxz_yzy)
+_convert_0xz_yxy = numba_jit(euler.convert_zxz_yxy)
+_convert_0xz_zyz = numba_jit(euler.convert_zxz_zyz)
+_convert_0xz_xyx = numba_jit(euler.convert_zxz_xyx)
 
 _GadgetDataTriple: TypeAlias = UInt8Array1D
 """
@@ -124,21 +146,18 @@ Data for the third gadget is set to zero, except for a commutation code
 (cf. :obj:`CommutationCodeArray`) which has been written onto the last byte.
 """
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# @numba_jit
+def _product_parity(p: GadgetData, q: GadgetData) -> int:
+    p_legs = _get_gadget_legs(p)
+    q_legs = _get_gadget_legs(q)
+    s = 0
+    for p_pauli, q_pauli in zip(p_legs, q_legs):
+        if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]:
+            s += 1
+    return s%2
 
-# You should have received a copy of the GNU Lesser General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-
-@numba_jit
+# @numba_jit
 def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     """
     Auxiliary function used by :func:`_commute` to commute an adjacent pair of gadgets.
@@ -148,8 +167,8 @@ def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     TOL = 1e-8
     n = len(row) // 3
     xi = row[-1]
-    p: GadgetData = row[:n]
-    q: GadgetData = row[n : 2 * n]
+    p: GadgetData = row[:n].copy()
+    q: GadgetData = row[n : 2 * n].copy()
     a = phase2float(get_phase(p))
     b = phase2float(get_phase(q))
     if overlap(p, q) % 2 == 0:
@@ -157,54 +176,87 @@ def _aux_commute_pair(row: _GadgetDataTriple) -> None:
             row[2 * n :] = p
             row[:n] = 0
         return
+    if xi == 0:
+        return
     r = p ^ q  # phase bytes will be overwritten later
+    prod_parity = _product_parity(p, q)
     if xi < 3:
         if xi == 1:
-            # xz -> zyz
+            # 0zx -> zyz
+            # 0qp -> qrq
             row[:n] = q
-            row[2 * n :] = q
             row[n : 2 * n] = r
-            _a, _b, _c = _convert_xz0_zyz(a, b, 0, TOL)
+            row[2 * n :] = q
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_zyz(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_xyx(0, b, a, TOL)
         else:  # xi == 2
-            # xz -> yzy
+            # 0zx -> yzy
+            # 0qp -> rqr
             row[:n] = r
+            row[n : 2 * n] = q
             row[2 * n :] = r
-            _a, _b, _c = _convert_xz0_yzy(a, b, 0, TOL)
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_yzy(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_yxy(0, b, a, TOL)
     elif xi < 5:
         if xi == 3:
-            # xz -> xyx
-            row[2 * n :] = p
+            # 0zx -> xyx
+            # 0qp -> prp
+            row[:n] = p
             row[n : 2 * n] = r
-            _a, _b, _c = _convert_xz0_xyx(a, b, 0, TOL)
+            row[2 * n :] = p
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_xyx(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_zyz(0, b, a, TOL)
         else:  # xi == 4
-            # xz -> yxy
-            row[n : 2 * n] = p
+            # 0zx -> yxy
+            # 0qp -> rpr
             row[:n] = r
+            row[n : 2 * n] = p
             row[2 * n :] = r
-            _a, _b, _c = _convert_xz0_yxy(a, b, 0, TOL)
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_yxy(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_yzy(0, b, a, TOL)
     else:
         if xi == 5:
-            # xz -> yzx
-            row[2 * n :] = p
-            row[:n] = r
-            _a, _b, _c = _convert_xz0_yzx(a, b, 0, TOL)
+            # 0zx -> yxz
+            # 0qp -> rpq
+            row[:n] = q
+            row[n : 2 * n] = p
+            row[2 * n :] = r
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_yxz(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_yzx(0, b, a, TOL)
         elif xi == 6:
-            # xz -> zyx
-            row[2 * n :] = p
+            # 0zx -> xyz
+            # 0qp -> prq
             row[:n] = q
             row[n : 2 * n] = r
-            _a, _b, _c = _convert_xz0_zyx(a, b, 0, TOL)
+            row[2 * n :] = p
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_xyz(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_zyx(0, b, a, TOL)
         else:  # xi == 7
-            # xz -> zxy
-            q = q.copy()
-            row[n : 2 * n] = p
-            row[:n] = q
-            row[2 * n :] = r
-            _a, _b, _c = _convert_xz0_zxy(a, b, 0, TOL)
+            # 0zx -> xzy
+            # 0qp -> pqr
+            row[:n] = r
+            row[n : 2 * n] = q
+            row[2 * n :] = p
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_xzy(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_zxy(0, b, a, TOL)
     _a_phase, _b_phase, _c_phase = float2phase(_a), float2phase(_b), float2phase(_c)
-    set_phase(row[:n], _a_phase)
+    set_phase(row[:n], _c_phase)
     set_phase(row[n : 2 * n], _b_phase)
-    set_phase(row[2 * n :], _c_phase)
+    set_phase(row[2 * n :], _a_phase)
 
 
 def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
@@ -535,6 +587,19 @@ class Circuit:
         codes = np.asarray(codes, dtype=np.uint8)
         assert self._validate_commutation_codes(codes)
         return Circuit(commute(self._data, codes), self._num_qubits)
+
+    def random_commute(
+        self,
+        *,
+        non_zero: bool = False,
+        rng: int | RNG | None = None
+    ) -> Self:
+        """
+        Commutes adjacent gadget pairs in the circuit according to randomly sampled
+        commutation codes.
+        """
+        codes = self.random_commutation_codes(non_zero=non_zero, rng=rng)
+        return self.commute(codes)
 
     def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget circuit."""

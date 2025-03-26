@@ -21,18 +21,17 @@ from typing import Literal, Self, TypeAlias
 import numpy as np
 
 from ._numpy import RNG, Complex128Array1D, Complex128Array2D, normalise_phase
-from .gadgets import PHASE_DENOM, Gadget, Layer, PauliArray, Phase
+from .gadgets import Gadget, Layer, PauliArray, Phase
 from .circuits import Circuit
 
 if __debug__:
     from typing_validation import validate
 
-PhaseLike: TypeAlias = Phase | float | Fraction
+PhaseLike: TypeAlias = Phase | Fraction
 r"""
 Type alias for values which can be used to specify a phase:
 
-- as an integer, see :obj:`Phase`
-- as a floating point value in :math:`[0, 2\pi)`
+- as a floating point value in :math:`[0, 2\pi)`, see :obj:`Phase`
 - as a fraction of :math:`\pi`
 
 """
@@ -87,9 +86,7 @@ class CircuitBuilder:
         """
         m, n = self.num_layers, self._num_qubits
         if isinstance(phase, Phase):
-            phase %= PHASE_DENOM
-        elif isinstance(phase, float):
-            phase = Gadget.float2phase(phase)
+            phase %= 2*np.pi
         else:
             assert validate(phase, Fraction)
             phase = Gadget.frac2phase(phase)
@@ -188,39 +185,39 @@ class CircuitBuilder:
 
     def x(self, q: QubitIdx) -> None:
         """Adds a X gate on the given qubit."""
-        self.rx(PHASE_DENOM // 2, q)
+        self.rx(Fraction(1, 1), q)
 
     def z(self, q: QubitIdx) -> None:
         """Adds a Z gate on the given qubit."""
-        self.rz(PHASE_DENOM // 2, q)
+        self.rz(Fraction(1, 1), q)
 
     def y(self, q: QubitIdx) -> None:
         """Adds a Y gate on the given qubit."""
-        self.ry(PHASE_DENOM // 2, q)
+        self.ry(Fraction(1, 1), q)
 
     def sx(self, q: QubitIdx) -> None:
         """Adds a √X gate on the given qubit."""
-        self.rx(PHASE_DENOM // 4, q)
+        self.rx(Fraction(1, 2), q)
 
     def sx_dag(self, q: QubitIdx) -> None:
         """Adds a √X† gate on the given qubit."""
-        self.rx(-PHASE_DENOM // 4, q)
+        self.rx(Fraction(-1, 2), q)
 
     def s(self, q: QubitIdx) -> None:
         """Adds a S gate on the given qubit."""
-        self.rz(PHASE_DENOM // 4, q)
+        self.rz(Fraction(1, 2), q)
 
     def s_dag(self, q: QubitIdx) -> None:
         """Adds a S† gate on the given qubit."""
-        self.rz(-PHASE_DENOM // 4, q)
+        self.rz(Fraction(-1, 2), q)
 
     def t(self, q: QubitIdx) -> None:
         """Adds a T gate on the given qubit."""
-        self.rz(PHASE_DENOM // 8, q)
+        self.rz(Fraction(1, 4), q)
 
     def t_dag(self, q: QubitIdx) -> None:
         """Adds a T† gate on the given qubit."""
-        self.rz(-PHASE_DENOM // 48, q)
+        self.rz(Fraction(-1, 4), q)
 
     def h(self, q: QubitIdx, *, xzx: bool = False) -> None:
         """
@@ -266,7 +263,7 @@ class CircuitBuilder:
         """Adds a CZ gate to the given control and target qubits."""
         self.s_dag(c)
         self.s_dag(t)
-        self.add_gadget(PHASE_DENOM // 4, "ZZ", (c, t))
+        self.add_gadget(Fraction(1, 2), "ZZ", (c, t))
 
     def cy(self, c: QubitIdx, t: QubitIdx) -> None:
         """Adds a CY gate to the given control and target qubits."""
@@ -290,13 +287,13 @@ class CircuitBuilder:
 
     def ccz(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
         """Adds a CCZ gate to the given control and target qubits."""
-        self.add_gadget(PHASE_DENOM // 8, "Z__", (c0, c1, t))
-        self.add_gadget(PHASE_DENOM // 8, "_Z_", (c0, c1, t))
-        self.add_gadget(PHASE_DENOM // 8, "__Z", (c0, c1, t))
-        self.add_gadget(-PHASE_DENOM // 8, "ZZ_", (c0, c1, t))
-        self.add_gadget(-PHASE_DENOM // 8, "Z_Z", (c0, c1, t))
-        self.add_gadget(-PHASE_DENOM // 8, "_ZZ", (c0, c1, t))
-        self.add_gadget(PHASE_DENOM // 8, "ZZZ", (c0, c1, t))
+        self.add_gadget(Fraction(1, 8), "Z__", (c0, c1, t))
+        self.add_gadget(Fraction(1, 8), "_Z_", (c0, c1, t))
+        self.add_gadget(Fraction(1, 8), "__Z", (c0, c1, t))
+        self.add_gadget(Fraction(-1, 8), "ZZ_", (c0, c1, t))
+        self.add_gadget(Fraction(-1, 4), "Z_Z", (c0, c1, t))
+        self.add_gadget(Fraction(-1, 4), "_ZZ", (c0, c1, t))
+        self.add_gadget(Fraction(1, 2), "ZZZ", (c0, c1, t))
 
     def ccy(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
         """Adds a CCY gate to the given control and target qubits."""

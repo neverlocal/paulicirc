@@ -36,7 +36,6 @@ from ._numpy import (
     BoolArray1D,
     Complex128Array1D,
     Complex128Array2D,
-    UInt16Array1D,
     UInt8Array1D,
     UInt8Array2D,
     interleave,
@@ -44,16 +43,18 @@ from ._numpy import (
     numba_jit,
 )
 from .gadgets import (
-    PHASE_DENOM,
     PHASE_NBYTES,
     Gadget,
     GadgetData,
     Pauli,
     PauliArray,
-    float2phase,
+    Phase,
+    PhaseArray,
+    decode_phases,
+    encode_phases,
     get_phase,
+    invert_phases,
     overlap,
-    phase2float,
     set_phase,
     _get_gadget_legs,
 )
@@ -64,15 +65,6 @@ if __debug__:
 
 CircuitData: TypeAlias = UInt8Array2D
 """Type alias for data encoding a circuit of Pauli gadgets."""
-
-PhaseDataArray: TypeAlias = np.ndarray[tuple[int, Literal[2]], np.dtype[np.uint8]]
-"""
-Type alias for a 1D array of encoded phase data,
-as a 2D UInt8 NumPy array of shape ``(n, 2)``, where ``n`` is the number of phases.
-"""
-
-PhaseArray: TypeAlias = UInt16Array1D
-"""Type alias for a 1D array of phases, as a 1D UInt16 array."""
 
 CommutationCodeArray: TypeAlias = UInt8Array1D
 """
@@ -92,9 +84,6 @@ If the gadgets have odd overlap, the commutations performed on codes 1-7 are as 
 - 7 for ``xz -> zxy``
 
 """
-
-assert PHASE_NBYTES == PhaseDataArray.__args__[0].__args__[1].__args__[0]  # type: ignore
-assert PhaseArray.__args__[1].__args__[0].__name__ == f"uint{8*PHASE_NBYTES}"  # type: ignore
 
 
 def _zero_circ(m: int, n: int) -> CircuitData:
@@ -169,8 +158,8 @@ def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     xi = row[-1]
     p: GadgetData = row[:n].copy()
     q: GadgetData = row[n : 2 * n].copy()
-    a = phase2float(get_phase(p))
-    b = phase2float(get_phase(q))
+    a = get_phase(p)
+    b = get_phase(q)
     if overlap(p, q) % 2 == 0:
         if xi != 0:
             row[2 * n :] = p
@@ -253,10 +242,9 @@ def _aux_commute_pair(row: _GadgetDataTriple) -> None:
                 _a, _b, _c = _convert_0zx_xzy(0, b, a, TOL)
             else:
                 _a, _b, _c = _convert_0xz_zxy(0, b, a, TOL)
-    _a_phase, _b_phase, _c_phase = float2phase(_a), float2phase(_b), float2phase(_c)
-    set_phase(row[:n], _c_phase)
-    set_phase(row[n : 2 * n], _b_phase)
-    set_phase(row[2 * n :], _a_phase)
+    set_phase(row[:n], _c)
+    set_phase(row[n : 2 * n], _b)
+    set_phase(row[2 * n :], _a)
 
 
 def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
@@ -275,30 +263,6 @@ def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     np.apply_along_axis(_aux_commute_pair, 1, reshaped_exp_circ)  # type: ignore
     return exp_circ[~np.all(exp_circ == 0, axis=1)]  # type: ignore
 
-
-assert (
-    PHASE_NBYTES == 2
-), "Functions below are implemented under the assumption of 16-bit phases."
-
-
-@numba_jit
-def decode_phases(phases: PhaseDataArray) -> PhaseArray:
-    """Decodes phase data from a gadget circuit into an array of phases."""
-    return (phases[:, 0].astype(np.uint16) * 256 + phases[:, 1]).astype(np.uint16)
-
-
-@numba_jit
-def encode_phases(phases: PhaseArray) -> PhaseDataArray:
-    """Encodes an array of phases into phase data for a gadget circuit."""
-    return np.vstack(np.divmod(phases, 256)).astype(np.uint8).T
-
-
-@numba_jit
-def invert_phases(phases: PhaseDataArray) -> None:
-    """Inplace phase inversion for the given phase data."""
-    phases[:, 0], phases[:, 1] = np.divmod(
-        PHASE_DENOM - (256 * phases[:, 0].astype(np.uint32) + phases[:, 1]), 256
-    )
 
 
 @final
@@ -455,33 +419,15 @@ class Circuit:
             for leg in range(4)
             for prev_leg in range(4)
         }
-        rot_z_cache: dict[int, Matrix] = {}
 
-        def rot_z(phase: int) -> Matrix:
-            mat: Matrix | None = rot_z_cache.get(phase)
-            if mat is None:
-                angle = 2 * np.pi * phase / PHASE_DENOM
-                mat = array([[exp(-1j * angle / 2), 0], [0, exp(1j * angle / 2)]])
-                rot_z_cache[phase] = mat
-            return mat
+        def rot_z(phase: Phase) -> Matrix:
+            return array([[exp(-1j * phase / 2), 0], [0, exp(1j * phase / 2)]])
 
-        rot_zh_cache: dict[int, Matrix] = {}
+        def rot_zh(phase: Phase) -> Matrix:
+            return matmul(rot_z(phase), H)
 
-        def rot_zh(phase: int) -> Matrix:
-            mat: Matrix | None = rot_zh_cache.get(phase)
-            if mat is None:
-                mat = matmul(rot_z(phase), H)
-                rot_zh_cache[phase] = mat
-            return mat
-
-        rot_z_curr_prev_cache: dict[tuple[int, Pauli, Pauli], Matrix] = {}
-
-        def rot_z_curr_prev(phase: int, curr: Pauli, prev: Pauli) -> Matrix:
-            mat = rot_z_curr_prev_cache.get((phase, curr, prev))
-            if mat is None:
-                mat = matmul(rot_z(phase), basis_change_middle[(curr, prev)])
-                rot_z_curr_prev_cache[(phase, curr, prev)] = mat
-            return mat
+        def rot_z_curr_prev(phase: Phase, curr: Pauli, prev: Pauli) -> Matrix:
+            return matmul(rot_z(phase), basis_change_middle[(curr, prev)])
 
         # 3. Create spider graph with sufficient initial capacity.
         n, m = self.num_qubits, self.num_gadgets

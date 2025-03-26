@@ -16,7 +16,9 @@
 from __future__ import annotations
 from collections.abc import Iterator
 from fractions import Fraction
+import re
 from typing import (
+    Any,
     Final,
     Literal,
     Self,
@@ -30,6 +32,7 @@ from scipy.linalg import expm  # type: ignore[import-untyped]
 from ._numpy import (
     Complex128Array1D,
     Complex128Array2D,
+    FloatArray1D,
     UInt8Array1D,
     normalise_phase,
     numba_jit,
@@ -45,6 +48,11 @@ Type alias for a Pauli, encoded as a 2-bit integer:
 0b00 is I, 0b01 is X, 0b10 is Z, 0b11 is Y.
 """
 
+PauliArray: TypeAlias = UInt8Array1D
+"""
+Type alias for a 1D array of Paulis, as 1D UInt8 array with entries in ``range(4)``.
+"""
+
 PauliChar: TypeAlias = Literal["_", "X", "Z", "Y"]
 """
 Type alias for single-character representations of Paulis.
@@ -52,10 +60,19 @@ Note that I is represented as ``_``,
 following the same convention as `stim <https://github.com/quantumlib/stim>`_.
 """
 
-PauliArray: TypeAlias = UInt8Array1D
+PAULI_CHARS: Final[Sequence[PauliChar]] = ("_", "X", "Z", "Y")
 """
-Type alias for a 1D array of Paulis, as 1D UInt8 array with entries in ``range(4)``.
+Single-character representations of Paulis,
+in order compatible with the chosen encoding (cf. :obj:`Pauli`).
 """
+
+PAULI_MATS: Final[tuple[Complex128Array2D, ...]] = (
+    np.array([[1, 0], [0, 1]], dtype=np.complex128),
+    np.array([[0, 1], [1, 0]], dtype=np.complex128),
+    np.array([[1, 0], [0, -1]], dtype=np.complex128),
+    np.array([[0, -1j], [1j, 0]], dtype=np.complex128),
+)
+"""The four Pauli matrices."""
 
 GadgetData: TypeAlias = UInt8Array1D
 """
@@ -68,36 +85,29 @@ The phase is stored as a 16-bit integer, with the most significant byte first;
 see :obj:`Phase`.
 """
 
-Phase: TypeAlias = int
-r"""
-Type alias for a phase, represented as the integer :math:`k` such that the phase
-angle is equal to :math:`k\pi/32768` (see :obj:`PHASE_DENOM`).
+Phase: TypeAlias = float
+r"""Type alias for a phase, as a 64-bit float."""
+
+
+PHASE_DTYPE: Final[type[np.floating[Any]]] = np.float64
+"""NumPy dtype used to represent phases."""
+
+PHASE_NBYTES: Final[int] = int(
+    re.match(r"float([0-9]+)", PHASE_DTYPE.__name__)[1] # type: ignore
+)//8
+"""Number of bytes used for phase representation."""
+
+assert PHASE_NBYTES >= 2, "Code presumes at least 16-bit precision."
+
+
+PhaseDataArray: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.uint8]]
+"""
+Type alias for a 1D array of encoded phase data,
+as a 2D UInt8 NumPy array of shape ``(n, PHASE_NBYTES)``.
 """
 
-PAULI_CHARS: Final[Sequence[PauliChar]] = ("_", "X", "Z", "Y")
-"""
-Single-character representations of Paulis,
-in order compatible with the chosen encoding (cf. :obj:`Pauli`).
-"""
-
-PHASE_NBYTES: Final[Literal[2]] = 2
-"""
-Number of bytes used for phase representation, currently 2B  (see :obj:`PHASE_DENOM`).
-"""
-
-PHASE_DENOM: Final[int] = 256**PHASE_NBYTES
-r"""
-The subdivision of :math:`2\pi` used for phases.
-Currently set to 65536, so that phases are integer multiples of :math:`\pi/32768`.
-"""
-
-PAULI_MATS: Final[tuple[Complex128Array2D, ...]] = (
-    np.array([[1, 0], [0, 1]], dtype=np.complex128),
-    np.array([[0, 1], [1, 0]], dtype=np.complex128),
-    np.array([[1, 0], [0, -1]], dtype=np.complex128),
-    np.array([[0, -1j], [1j, 0]], dtype=np.complex128),
-)
-"""The four Pauli matrices."""
+PhaseArray: TypeAlias = FloatArray1D
+"""Type alias for a 1D array of phases."""
 
 _LEG_BYTE_SHIFTS = np.arange(6, -1, -2, dtype=np.uint8)
 """Bit shifts ``[6, 4, 2, 0]`` used on a byte to extract leg information."""
@@ -138,19 +148,6 @@ def _set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
     leg_data[: -(-(n - 2) // 4)] |= legs[2::4] << 2  # type: ignore
     leg_data[: -(-(n - 3) // 4)] |= legs[3::4]
 
-
-@numba_jit
-def phase2float(phase: Phase) -> float:
-    """Converts a phase (as an int) to radians (as a float)."""
-    return 2 * np.pi * phase / PHASE_DENOM
-
-
-@numba_jit
-def float2phase(phase_f: float) -> Phase:
-    """Converts radians (as a float) to a phase (as an int)."""
-    return int(np.round(phase_f * PHASE_DENOM * 0.5 / np.pi)) % PHASE_DENOM
-
-
 @numba_jit
 def overlap(p: GadgetData, q: GadgetData) -> int:
     """Gadget overlap."""
@@ -165,51 +162,56 @@ def overlap(p: GadgetData, q: GadgetData) -> int:
         mask <<= 2
     return int(np.sum(parity))
 
-
-assert (
-    PHASE_NBYTES == 2
-), "Functions below are implemented under the assumption of 16-bit phases."
-
-
 @numba_jit
 def get_phase(g: GadgetData) -> Phase:
     """Extracts phase data from the given gadget data."""
-    return int(g[-2]) * 256 + int(g[-1])
+    return float(g[-PHASE_NBYTES:].view(np.float64)[0])
 
 
 @numba_jit
 def set_phase(g: GadgetData, phase: Phase) -> None:
     """Sets phase data in the given gadget data."""
-    g[-2], g[-1] = divmod(phase, 256)
+    g[-PHASE_NBYTES:] = np.array([phase % 2*np.pi], dtype=np.float64).view(np.uint8)
 
+@numba_jit
+def is_zero_phase(phase: Phase) -> bool:
+    """Whether the given phase is deemed to be zero."""
+    return bool(np.isclose(phase%2*np.pi, 0.0))
+
+@numba_jit
+def decode_phases(phase_data: PhaseDataArray) -> PhaseArray:
+    """Decodes phase data from a gadget circuit into an array of phases."""
+    return phase_data.flatten().view(PHASE_DTYPE)
+
+@numba_jit
+def encode_phases(phases: PhaseArray) -> PhaseDataArray:
+    """Encodes an array of phases into phase data for a gadget circuit."""
+    return phases.view(np.uint8).reshape(-1, PHASE_NBYTES)
+
+@numba_jit
+def invert_phases(phase_data: PhaseDataArray) -> None:
+    """Inplace phase inversion for the given phase data."""
+    phase_data[:] = encode_phases(-decode_phases(phase_data))
 
 @final
 class Gadget:
     """A Pauli gadget."""
 
     @staticmethod
-    def float2phase(rad: float) -> Phase:
-        """Converts a phase (as an int) to radians (as a float)."""
-        return float2phase(rad)
+    def phase2frac(phase: Phase, *, prec: int = 8) -> Fraction:
+        r"""
+        Converts a phase to a fraction of :math:`\pi`.
 
-    @staticmethod
-    def phase2float(phase: Phase) -> float:
-        """Converts radians (as a float) to a phase (as an int)."""
-        return phase2float(phase)
-
-    @staticmethod
-    def phase2frac(phase: Phase) -> Fraction:
-        r"""Converts a phase (as an int) to a fraction of :math:`\pi`."""
-        return Fraction(phase, PHASE_DENOM // 2)
+        The optional ``prec`` kwarg can be used to set a number of bits of precision;
+        default is ``prec=8``, corresponding to :math:`\pi/256`.
+        """
+        K = 2**prec
+        return Fraction(round(phase*K)%K, K//2)
 
     @staticmethod
     def frac2phase(frac: Fraction) -> Phase:
-        r"""Converts a fraction of :math:`\pi` to a phase (as an int)."""
-        assert validate(frac, Fraction)
-        num, den = frac.numerator, frac.denominator
-        if (PHASE_DENOM // 2) % den == 0:
-            return num * PHASE_DENOM // 2 // den
-        return float2phase(num / den)
+        r"""Converts a fraction of :math:`\pi` to a phase (as a float)."""
+        return float(frac)
 
     @staticmethod
     def assemble_data(legs: PauliArray, phase: Phase) -> GadgetData:
@@ -282,18 +284,7 @@ class Gadget:
         if isinstance(value, Phase):
             set_phase(self._data, value)
             return
-        if isinstance(value, float):
-            set_phase(self._data, Gadget.float2phase(value))
-            return
         set_phase(self._data, Gadget.frac2phase(value))
-
-    @property
-    def phase_float(self) -> float:
-        r"""
-        Approximate representation of the gadget phase,
-        as a floating point number :math:`0 \leq x < 2\pi`.
-        """
-        return Gadget.phase2float(self.phase)
 
     @property
     def phase_frac(self) -> Fraction:
@@ -322,7 +313,7 @@ class Gadget:
         kron_prod = PAULI_MATS[legs[0]]
         for leg in legs[1:]:
             kron_prod = np.kron(kron_prod, PAULI_MATS[leg])
-        res: Complex128Array2D = expm(-0.5j * self.phase_float * kron_prod)
+        res: Complex128Array2D = expm(-0.5j * self.phase * kron_prod)
         if _normalise_phase:
             normalise_phase(res)
         return res
@@ -480,27 +471,16 @@ class Layer:
         """Add a gadget to the layer."""
         if not self.is_compatible_with(legs):
             return False
-        phase %= PHASE_DENOM
-        if phase == 0:
+        if is_zero_phase(phase):
             return True
         phases = self._phases
         subset = Layer._legs_to_subset(legs)
         if subset in phases:
-            new_phase = (phases[subset] + phase) % PHASE_DENOM
-            if new_phase == 0:
-                # print("add_gadget", legs, phase)
-                # print(list(self))
-                # print(f"{subset:0{self.num_qubits}b}")
-                # print(phases[subset], phase, new_phase)
-                # print(self._legs)
-                # print(self._leg_count)
+            new_phase = phases[subset] + phase
+            if is_zero_phase(new_phase):
                 del phases[subset]
                 self._leg_count -= np.where(legs == 0, np.uint32(0), np.uint32(1))
                 self._legs = np.where(self._leg_count == 0, 0, self._legs)
-                # print(self._legs)
-                # print(self._leg_count)
-                # print(list(self))
-                # print()
             else:
                 phases[subset] = new_phase
             return True

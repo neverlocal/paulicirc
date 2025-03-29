@@ -54,9 +54,9 @@ from .gadgets import (
     encode_phases,
     get_phase,
     invert_phases,
-    overlap,
+    gadget_overlap,
     set_phase,
-    _get_gadget_legs,
+    get_gadget_legs,
 )
 
 if __debug__:
@@ -138,8 +138,8 @@ Data for the third gadget is set to zero, except for a commutation code
 
 # @numba_jit
 def _product_parity(p: GadgetData, q: GadgetData) -> int:
-    p_legs = _get_gadget_legs(p)
-    q_legs = _get_gadget_legs(q)
+    p_legs = get_gadget_legs(p)
+    q_legs = get_gadget_legs(q)
     s = 0
     for p_pauli, q_pauli in zip(p_legs, q_legs):
         if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]:
@@ -160,7 +160,7 @@ def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     q: GadgetData = row[n : 2 * n].copy()
     a = get_phase(p)
     b = get_phase(q)
-    if overlap(p, q) % 2 == 0:
+    if gadget_overlap(p, q) % 2 == 0:
         if xi != 0:
             row[2 * n :] = p
             row[:n] = 0

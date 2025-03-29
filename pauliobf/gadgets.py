@@ -25,11 +25,13 @@ from typing import (
     Sequence,
     TypeAlias,
     final,
+    overload,
 )
 import numpy as np
 from scipy.linalg import expm  # type: ignore[import-untyped]
 
 from ._numpy import (
+    RNG,
     Complex128Array1D,
     Complex128Array2D,
     FloatArray1D,
@@ -116,7 +118,11 @@ _LEG_BYTE_MASKS = 0b11 * np.ones(4, dtype=np.uint8)
 """Byte mask used on a byte to extract leg information."""
 
 
-def _get_gadget_legs(g: GadgetData) -> PauliArray:
+def zero_gadget_data(num_qubits: int) -> GadgetData:
+    """Returns blank data for a gadget with the given number of qubits."""
+    return np.zeros(-(-num_qubits // 4) + PHASE_NBYTES, dtype=np.uint8)
+
+def get_gadget_legs(g: GadgetData) -> PauliArray:
     """
     Extract an array of leg information from given gadget data.
     The returned array has values in ``range(4)``,
@@ -129,12 +135,7 @@ def _get_gadget_legs(g: GadgetData) -> PauliArray:
     ) >> np.tile(_LEG_BYTE_SHIFTS, n)
 
 
-def _zero_gadget_data(num_qubits: int) -> GadgetData:
-    """Returns blank data for a gadget with the given number of qubits."""
-    return np.zeros(-(-num_qubits // 4) + PHASE_NBYTES, dtype=np.uint8)
-
-
-def _set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
+def set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
     """
     Sets leg information in the given gadget data.
     The input array should have values in ``range(4)``,
@@ -149,7 +150,22 @@ def _set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
     leg_data[: -(-(n - 3) // 4)] |= legs[3::4]
 
 @numba_jit
-def overlap(p: GadgetData, q: GadgetData) -> int:
+def get_phase(g: GadgetData) -> Phase:
+    """Extracts phase data from the given gadget data."""
+    return float(g[-PHASE_NBYTES:].view(np.float64)[0])
+
+@numba_jit
+def set_phase(g: GadgetData, phase: Phase) -> None:
+    """Sets phase data in the given gadget data."""
+    g[-PHASE_NBYTES:] = np.array([phase % (2*np.pi)], dtype=np.float64).view(np.uint8)
+
+@numba_jit
+def is_zero_phase(phase: Phase) -> bool:
+    """Whether the given phase is deemed to be zero."""
+    return bool(np.isclose(phase%(2*np.pi), 0.0))
+
+@numba_jit
+def gadget_overlap(p: GadgetData, q: GadgetData) -> int:
     """Gadget overlap."""
     p = p[:-PHASE_NBYTES]
     q = q[:-PHASE_NBYTES]
@@ -161,22 +177,6 @@ def overlap(p: GadgetData, q: GadgetData) -> int:
         parity += (_p != 0) & (_q != 0) & (_p != _q)
         mask <<= 2
     return int(np.sum(parity))
-
-@numba_jit
-def get_phase(g: GadgetData) -> Phase:
-    """Extracts phase data from the given gadget data."""
-    return float(g[-PHASE_NBYTES:].view(np.float64)[0])
-
-
-@numba_jit
-def set_phase(g: GadgetData, phase: Phase) -> None:
-    """Sets phase data in the given gadget data."""
-    g[-PHASE_NBYTES:] = np.array([phase % 2*np.pi], dtype=np.float64).view(np.uint8)
-
-@numba_jit
-def is_zero_phase(phase: Phase) -> bool:
-    """Whether the given phase is deemed to be zero."""
-    return bool(np.isclose(phase%2*np.pi, 0.0))
 
 @numba_jit
 def decode_phases(phase_data: PhaseDataArray) -> PhaseArray:
@@ -206,20 +206,45 @@ class Gadget:
         default is ``prec=8``, corresponding to :math:`\pi/256`.
         """
         K = 2**prec
-        return Fraction(round(phase*K)%K, K//2)
+        return Fraction(round(phase/np.pi*K)%K, K)
 
     @staticmethod
     def frac2phase(frac: Fraction) -> Phase:
         r"""Converts a fraction of :math:`\pi` to a phase (as a float)."""
-        return float(frac)
+        return float(frac)*np.pi
 
     @staticmethod
     def assemble_data(legs: PauliArray, phase: Phase) -> GadgetData:
         """Assembles gadget data from the given legs and phase."""
-        g = _zero_gadget_data(len(legs))
-        _set_gadget_legs(g, legs)
+        g = zero_gadget_data(len(legs))
+        set_gadget_legs(g, legs)
         set_phase(g, phase)
         return g
+
+    @classmethod
+    def zero(cls, num_qubits: int) -> Self:
+        """Returns the gadget with no legs and zero phase."""
+        data = zero_gadget_data(num_qubits)
+        return cls(data, num_qubits)
+
+    @classmethod
+    def from_paulistr(cls, paulistr: str, phase: Phase) -> Self:
+        """Returns a gadget with legs specified by the given Paulistring."""
+        assert Gadget._validate_paulistr(paulistr)
+        num_qubits = len(paulistr)
+        legs = np.fromiter((PAULI_CHARS.index(p) for p in paulistr), dtype=np.uint8)
+        data = Gadget.assemble_data(legs, phase)
+        return cls(data, num_qubits)
+
+    @classmethod
+    def random(cls, num_qubits: int, rng: int | RNG | None = None) -> Self:
+        """Returns a gadget with uniformly sampled legs and phase."""
+        if not isinstance(rng, RNG):
+            rng = np.random.default_rng(rng)
+        legs: PauliArray = rng.integers(0, 4, size=num_qubits, dtype=np.uint8)
+        phase: Phase = rng.uniform(0, 2*np.pi)
+        data = Gadget.assemble_data(legs, phase)
+        return cls(data, num_qubits)
 
     _data: GadgetData
     _num_qubits: int
@@ -250,7 +275,7 @@ class Gadget:
     @property
     def legs(self) -> PauliArray:
         """Legs of the gadget."""
-        return _get_gadget_legs(self._data)[: self._num_qubits]
+        return get_gadget_legs(self._data)[: self._num_qubits]
 
     @legs.setter
     def legs(self, value: Sequence[Pauli] | PauliArray) -> None:
@@ -258,7 +283,7 @@ class Gadget:
         assert validate(value, Sequence[Pauli] | PauliArray)
         legs: PauliArray = np.asarray(value, dtype=np.uint8)
         assert self._validate_legs_value(legs)
-        _set_gadget_legs(self._data, legs)
+        set_gadget_legs(self._data, legs)
 
     @property
     def leg_paulistr(self) -> str:
@@ -307,6 +332,15 @@ class Gadget:
             return f"{num_str}π"  # the only case should be 'π'
         return f"{num_str}π/{str(den)}"
 
+    def overlap(self, other: Gadget) -> int:
+        """
+        Returns the overlap between the legs of this gadgets and those of the given
+        gadget, computed as the number of qubits where the legs of the two gadgets
+        differ and are both not the identity Pauli (the value 0, as a :obj:`Pauli`).
+        """
+        assert self._validate_same_num_qubits(other)
+        return gadget_overlap(self._data, other._data)
+
     def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget."""
         legs = self.legs
@@ -335,14 +369,13 @@ class Gadget:
         """Creates a persistent copy of the gadget."""
         return Gadget(self._data.copy(), self._num_qubits)
 
-    def overlap(self, other: Gadget) -> int:
-        """
-        Returns the overlap between the legs of this gadgets and those of the given
-        gadget, computed as the number of qubits where the legs of the two gadgets
-        differ and are both not the identity Pauli (the value 0, as a :obj:`Pauli`).
-        """
-        assert self._validate_same_num_qubits(other)
-        return overlap(self._data, other._data)
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, Gadget):
+            return NotImplemented
+        return (
+            self.num_qubits == other.num_qubits
+            and np.array_equal(self._data, other._data)
+        )
 
     def __repr__(self) -> str:
         legs_str = self.leg_paulistr
@@ -351,6 +384,14 @@ class Gadget:
         return f"<Gadget: {legs_str}, {self.phase_str}>"
 
     if __debug__:
+
+        @staticmethod
+        def _validate_paulistr(paulistr: str) -> Literal[True]:
+            """Validates a given Paulistring."""
+            validate(paulistr, str)
+            if not all(p in PAULI_CHARS for p in paulistr):
+                raise ValueError("Paulistring characters must be '_', 'X', 'Z' or 'Y'.")
+            return True
 
         @staticmethod
         def _validate_new_args(
@@ -366,7 +407,7 @@ class Gadget:
                     raise ValueError("Number of qubits must be non-negative.")
                 if num_qubits > (data.shape[0] - PHASE_NBYTES) * 4:
                     raise ValueError("Number of qubits exceeds circuit width.")
-            legs = _get_gadget_legs(data)
+            legs = get_gadget_legs(data)
             if any(legs[num_qubits:] != 0):
                 raise ValueError("Legs on excess qubits must be zeroed out.")
             return True
@@ -467,8 +508,24 @@ class Layer:
                 return False
         return True
 
-    def add_gadget(self, legs: PauliArray, phase: Phase) -> bool:
+    @overload
+    def add_gadget(self, gadget: Gadget, /) -> bool: ...
+
+    @overload
+    def add_gadget(self, legs: PauliArray, phase: Phase, /) -> bool: ...
+
+    def add_gadget(
+        self,
+        gadget_or_legs: PauliArray | Gadget,
+        phase: Phase | None = None
+    ) -> bool:
         """Add a gadget to the layer."""
+        if isinstance(gadget_or_legs, Gadget):
+            legs = gadget_or_legs.legs
+            phase = gadget_or_legs.phase
+        else:
+            legs = gadget_or_legs
+            assert phase is not None
         if not self.is_compatible_with(legs):
             return False
         if is_zero_phase(phase):
@@ -517,8 +574,8 @@ class Layer:
         def _validate_new_args(num_qubits: int) -> Literal[True]:
             """Validate arguments to the :meth:`__new__` method."""
             validate(num_qubits, int)
-            if num_qubits <= 0:
-                raise ValueError("Number of qubits must be strictly positive.")
+            if num_qubits < 0:
+                raise ValueError("Number of qubits must be non-negative.")
             return True
 
         def _validate_legs(self, legs: PauliArray) -> Literal[True]:

@@ -197,6 +197,45 @@ def test_gadget_changes(num_qubits: int, legs: PauliArray, phase: Phase) -> None
     assert g.phase == phase
 
 
+@pytest.mark.parametrize(
+    "num_qubits,lhs,rhs",
+    [
+        (
+            num_qubits,
+            Gadget.random(num_qubits, rng=rng),
+            Gadget.random(num_qubits, rng=rng),
+        )
+        for num_qubits in NUM_QUBITS_RANGE
+        for _ in range(NUM_RNG_SAMPLES)
+    ],
+)
+def test_gadget_overlap(num_qubits: int, lhs: Gadget, rhs: Gadget) -> None:
+    overlap = sum(
+        lhs_leg != 0 and rhs_leg != 0 and lhs_leg != rhs_leg
+        for lhs_leg, rhs_leg in zip(lhs.legs, rhs.legs, strict=True)
+    )
+    assert lhs.overlap(rhs) == overlap
+
+
+@pytest.mark.parametrize(
+    "num_qubits,legs,phase",
+    [
+        (
+            num_qubits,
+            rng.integers(0, 4, size=num_qubits, dtype=np.uint8),
+            rng.uniform(0, 2 * np.pi),
+        )
+        for num_qubits in NUM_QUBITS_RANGE
+        for _ in range(NUM_RNG_SAMPLES)
+    ],
+)
+def test_gadget_equality(num_qubits: int, legs: PauliArray, phase: Phase) -> None:
+    lhs = Gadget.from_legs(legs, phase)
+    rhs = Gadget.from_legs(legs, phase)
+    assert lhs == rhs
+    assert lhs == lhs.clone()
+
+
 rng = np.random.default_rng(RNG_SEED)
 
 
@@ -218,23 +257,4 @@ def test_gadget_paulistr(num_qubits: int, legs: PauliArray, phase: Phase) -> Non
     assert np.array_equal(g.legs, legs)
     assert g.leg_paulistr == paulistr
     assert g.phase == phase
-
-
-@pytest.mark.parametrize(
-    "num_qubits,lhs,rhs",
-    [
-        (
-            num_qubits,
-            Gadget.random(num_qubits, rng=rng),
-            Gadget.random(num_qubits, rng=rng),
-        )
-        for num_qubits in NUM_QUBITS_RANGE
-        for _ in range(NUM_RNG_SAMPLES)
-    ],
-)
-def test_gadget_overlap(num_qubits: int, lhs: Gadget, rhs: Gadget) -> None:
-    overlap = sum(
-        lhs_leg != 0 and rhs_leg != 0 and lhs_leg != rhs_leg
-        for lhs_leg, rhs_leg in zip(lhs.legs, rhs.legs, strict=True)
-    )
-    assert lhs.overlap(rhs) == overlap
+    assert g == Gadget.from_legs(legs, phase)

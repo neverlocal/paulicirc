@@ -298,13 +298,13 @@ class CircuitBuilder:
 
     def ccz(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
         """Adds a CCZ gate to the given control and target qubits."""
-        self.add_gadget(Fraction(1, 8), "Z__", (c0, c1, t))
-        self.add_gadget(Fraction(1, 8), "_Z_", (c0, c1, t))
-        self.add_gadget(Fraction(1, 8), "__Z", (c0, c1, t))
-        self.add_gadget(Fraction(-1, 8), "ZZ_", (c0, c1, t))
+        self.add_gadget(Fraction(1, 4), "Z__", (c0, c1, t))
+        self.add_gadget(Fraction(1, 4), "_Z_", (c0, c1, t))
+        self.add_gadget(Fraction(1, 4), "__Z", (c0, c1, t))
+        self.add_gadget(Fraction(-1, 4), "ZZ_", (c0, c1, t))
         self.add_gadget(Fraction(-1, 4), "Z_Z", (c0, c1, t))
         self.add_gadget(Fraction(-1, 4), "_ZZ", (c0, c1, t))
-        self.add_gadget(Fraction(1, 2), "ZZZ", (c0, c1, t))
+        self.add_gadget(Fraction(1, 4), "ZZZ", (c0, c1, t))
 
     def ccy(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
         """Adds a CCY gate to the given control and target qubits."""

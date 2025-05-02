@@ -60,6 +60,7 @@ def numba_jit(func: Callable[_P, _R]) -> Callable[_P, _R]:
     """Decorator to apply :func:`numba.jit` with desired settings."""
     return _numba_jit(func)  # type: ignore
 
+
 def normalise_phase(
     array: np.ndarray[ShapeT, np.dtype[np.complex128]],
     *,

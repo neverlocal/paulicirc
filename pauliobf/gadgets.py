@@ -14,7 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
-from collections.abc import Iterable, Iterator, Set
+from collections.abc import Iterable, Iterator
 from fractions import Fraction
 import re
 from typing import (
@@ -94,9 +94,9 @@ r"""Type alias for a phase, as a 64-bit float."""
 PHASE_DTYPE: Final[type[np.floating[Any]]] = np.float64
 """NumPy dtype used to represent phases."""
 
-PHASE_NBYTES: Final[int] = int(
-    re.match(r"float([0-9]+)", PHASE_DTYPE.__name__)[1] # type: ignore
-)//8
+PHASE_NBYTES: Final[int] = (
+    int(re.match(r"float([0-9]+)", PHASE_DTYPE.__name__)[1]) // 8  # type: ignore
+)
 """Number of bytes used for phase representation."""
 
 assert PHASE_NBYTES >= 2, "Code presumes at least 16-bit precision."
@@ -118,9 +118,15 @@ _LEG_BYTE_MASKS = 0b11 * np.ones(4, dtype=np.uint8)
 """Byte mask used on a byte to extract leg information."""
 
 
+def gadget_data_len(num_qubits: int) -> int:
+    """Returns the length of gadget data."""
+    return -(-num_qubits // 4) + PHASE_NBYTES
+
+
 def zero_gadget_data(num_qubits: int) -> GadgetData:
     """Returns blank data for a gadget with the given number of qubits."""
     return np.zeros(-(-num_qubits // 4) + PHASE_NBYTES, dtype=np.uint8)
+
 
 def get_gadget_legs(g: GadgetData) -> PauliArray:
     """
@@ -149,32 +155,34 @@ def set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
     leg_data[: -(-(n - 2) // 4)] |= legs[2::4] << 2  # type: ignore
     leg_data[: -(-(n - 3) // 4)] |= legs[3::4]
 
+
 @numba_jit
 def get_phase(g: GadgetData) -> Phase:
     """Extracts phase data from the given gadget data."""
     return float(g[-PHASE_NBYTES:].view(np.float64)[0])
 
+
 @numba_jit
 def set_phase(g: GadgetData, phase: Phase) -> None:
     """Sets phase data in the given gadget data."""
-    g[-PHASE_NBYTES:] = np.array([phase % (2*np.pi)], dtype=np.float64).view(np.uint8)
+    g[-PHASE_NBYTES:] = np.array([phase % (2 * np.pi)], dtype=np.float64).view(np.uint8)
+
 
 @numba_jit
 def is_zero_phase(phase: Phase) -> bool:
     """Whether the given phase is deemed to be zero."""
     atol = 1e-8
-    phase %= 2*np.pi
-    return bool(phase < atol or 2*np.pi-phase < atol)
+    phase %= 2 * np.pi
+    return bool(phase < atol or 2 * np.pi - phase < atol)
+
 
 @numba_jit
 def are_same_phase(lhs: Phase, rhs: Phase) -> bool:
     """Whether the given phases are deemed to be the same."""
-    lhs %= 2*np.pi
-    rhs %= 2*np.pi
-    return bool(
-        np.isclose(lhs, rhs)
-        or np.isclose(lhs, 2*np.pi-rhs)
-    )
+    lhs %= 2 * np.pi
+    rhs %= 2 * np.pi
+    return bool(np.isclose(lhs, rhs) or np.isclose(lhs, 2 * np.pi - rhs))
+
 
 @numba_jit
 def gadget_overlap(p: GadgetData, q: GadgetData) -> int:
@@ -190,20 +198,24 @@ def gadget_overlap(p: GadgetData, q: GadgetData) -> int:
         mask <<= 2
     return int(np.sum(parity))
 
+
 @numba_jit
 def decode_phases(phase_data: PhaseDataArray) -> PhaseArray:
     """Decodes phase data from a gadget circuit into an array of phases."""
     return phase_data.flatten().view(PHASE_DTYPE)
+
 
 @numba_jit
 def encode_phases(phases: PhaseArray) -> PhaseDataArray:
     """Encodes an array of phases into phase data for a gadget circuit."""
     return phases.view(np.uint8).reshape(-1, PHASE_NBYTES)
 
+
 @numba_jit
 def invert_phases(phase_data: PhaseDataArray) -> None:
     """Inplace phase inversion for the given phase data."""
     phase_data[:] = encode_phases(-decode_phases(phase_data))
+
 
 @final
 class Gadget:
@@ -218,12 +230,12 @@ class Gadget:
         default is ``prec=8``, corresponding to :math:`\pi/256`.
         """
         K = 2**prec
-        return Fraction(round(phase/np.pi*K)%K, K)
+        return Fraction(round(phase / np.pi * K) % K, K)
 
     @staticmethod
     def frac2phase(frac: Fraction) -> Phase:
         r"""Converts a fraction of :math:`\pi` to a phase (as a float)."""
-        return float(frac)*np.pi
+        return float(frac) * np.pi
 
     @staticmethod
     def assemble_data(legs: PauliArray, phase: Phase) -> GadgetData:
@@ -264,8 +276,8 @@ class Gadget:
         *,
         allow_zero: bool = True,
         allow_legless: bool = True,
-        rng: int | RNG | None = None
-        ) -> Self:
+        rng: int | RNG | None = None,
+    ) -> Self:
         """Returns a gadget with uniformly sampled legs and phase."""
         if not isinstance(rng, RNG):
             rng = np.random.default_rng(rng)
@@ -275,13 +287,12 @@ class Gadget:
                 raise ValueError("Number of qubits must be positive.")
             while np.all(legs == 0):
                 legs = rng.integers(0, 4, size=num_qubits, dtype=np.uint8)
-        phase: Phase = rng.uniform(0, 2*np.pi)
+        phase: Phase = rng.uniform(0, 2 * np.pi)
         if not allow_zero:
             while is_zero_phase(phase):
-                phase = rng.uniform(0, 2*np.pi)
+                phase = rng.uniform(0, 2 * np.pi)
         data = Gadget.assemble_data(legs, phase)
         return cls(data, num_qubits)
-
 
     _data: GadgetData
     _num_qubits: int
@@ -379,6 +390,14 @@ class Gadget:
         """Whether the gadget has no legs."""
         return bool(np.all(self.legs == 0))
 
+    def inverse(self) -> Self:
+        """
+        Returns the inverse of this gadget, with both phase negated.
+        """
+        g = self.clone()
+        set_phase(g._data, -g.phase)
+        return g
+
     def overlap(self, other: Gadget) -> int:
         """
         Returns the overlap between the legs of this gadgets and those of the given
@@ -391,6 +410,8 @@ class Gadget:
     def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget."""
         legs = self.legs
+        if len(legs) == 0:
+            return np.array([[np.exp(-0.5j * self.phase)]], dtype=np.complex128)
         kron_prod = PAULI_MATS[legs[0]]
         for leg in legs[1:]:
             kron_prod = np.kron(kron_prod, PAULI_MATS[leg])
@@ -448,7 +469,7 @@ class Gadget:
             """Validates the arguments of the :meth:`__new__` method."""
             validate(data, GadgetData)
             if num_qubits is None:
-                num_qubits = 4*(len(data)-PHASE_NBYTES)
+                num_qubits = 4 * (len(data) - PHASE_NBYTES)
             else:
                 validate(num_qubits, int)
                 if num_qubits < 0:
@@ -580,9 +601,7 @@ class Layer:
     def add_gadget(self, legs: PauliArray, phase: Phase, /) -> bool: ...
 
     def add_gadget(
-        self,
-        gadget_or_legs: PauliArray | Gadget,
-        phase: Phase | None = None
+        self, gadget_or_legs: PauliArray | Gadget, phase: Phase | None = None
     ) -> bool:
         """Add a gadget to the layer."""
         if isinstance(gadget_or_legs, Gadget):
@@ -601,7 +620,7 @@ class Layer:
                 self._leg_count -= np.where(legs == 0, np.uint32(0), np.uint32(1))
                 self._legs = np.where(self._leg_count == 0, 0, self._legs)
             else:
-                phases[subset] = curr_phase+phase
+                phases[subset] = curr_phase + phase
             return True
         else:
             phases[subset] = phase

@@ -86,7 +86,7 @@ class CircuitBuilder:
         """
         m, n = self.num_layers, self._num_qubits
         if isinstance(phase, Phase):
-            phase %= 2*np.pi
+            phase %= 2 * np.pi
         else:
             assert validate(phase, Fraction)
             phase = Gadget.frac2phase(phase)

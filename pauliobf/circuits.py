@@ -16,6 +16,7 @@
 from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator
 from typing import (
+    Any,
     Literal,
     Self,
     Sequence,
@@ -38,7 +39,6 @@ from ._numpy import (
     Complex128Array2D,
     UInt8Array1D,
     UInt8Array2D,
-    interleave,
     normalise_phase,
     numba_jit,
 )
@@ -52,6 +52,7 @@ from .gadgets import (
     PhaseArray,
     decode_phases,
     encode_phases,
+    gadget_data_len,
     get_phase,
     invert_phases,
     gadget_overlap,
@@ -106,8 +107,12 @@ def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
     """
     ncols = PHASE_NBYTES - (-n // 4)
     data = rng.integers(0, 256, (m, ncols), dtype=np.uint8)
-    mask = 0b11111111 << 2 * (-n % 4) & 0b11111111
-    data[:, -PHASE_NBYTES - 1] &= mask
+    if n % 4 != 0:
+        # zeroes out the padding leg bits (up to 6 bits)
+        mask = 0b11111111 << 2 * (-n % 4) & 0b11111111
+        data[:, -PHASE_NBYTES - 1] &= mask
+    # zeroes out the phase bytes
+    data[:, -PHASE_NBYTES:] = 0
     return data
 
 
@@ -136,7 +141,7 @@ Data for the third gadget is set to zero, except for a commutation code
 """
 
 
-# @numba_jit
+@numba_jit
 def _product_parity(p: GadgetData, q: GadgetData) -> int:
     p_legs = get_gadget_legs(p)
     q_legs = get_gadget_legs(q)
@@ -144,9 +149,10 @@ def _product_parity(p: GadgetData, q: GadgetData) -> int:
     for p_pauli, q_pauli in zip(p_legs, q_legs):
         if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]:
             s += 1
-    return s%2
+    return s % 2
 
-# @numba_jit
+
+@numba_jit
 def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     """
     Auxiliary function used by :func:`_commute` to commute an adjacent pair of gadgets.
@@ -264,7 +270,6 @@ def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     return exp_circ[~np.all(exp_circ == 0, axis=1)]  # type: ignore
 
 
-
 @final
 class Circuit:
     """A quantum circuit, represented as a sequential composition of Pauli gadgets."""
@@ -312,9 +317,11 @@ class Circuit:
         """Constructs a circuit from the given gadgets."""
         gadgets = list(gadgets)
         assert Circuit.__validate_gadgets(gadgets, num_qubits)
-        data = np.array([g._data for g in gadgets], dtype=np.uint8)
         if num_qubits is None:
             num_qubits = gadgets[0].num_qubits
+        data = np.array([g._data for g in gadgets], dtype=np.uint8).reshape(
+            len(gadgets), gadget_data_len(num_qubits)
+        )
         return cls(data, num_qubits)
 
     _data: CircuitData
@@ -333,10 +340,6 @@ class Circuit:
         self._data = data
         self._num_qubits = num_qubits
         return self
-
-    def clone(self) -> Self:
-        """Creates a copy of the gadget circuit."""
-        return Circuit(self._data.copy(), self._num_qubits)
 
     @property
     def num_gadgets(self) -> int:
@@ -359,6 +362,10 @@ class Circuit:
         assert self._validate_phases_value(value)
         self._data[:, -PHASE_NBYTES:] = encode_phases(value)
 
+    def clone(self) -> Self:
+        """Creates a copy of the gadget circuit."""
+        return Circuit(self._data.copy(), self._num_qubits)
+
     def inverse(self) -> Self:
         """
         Returns the inverse of this graph, with both phases and gadget order inverted.
@@ -370,28 +377,6 @@ class Circuit:
     def invert_phases(self) -> None:
         """Inverts phases inplace, keeping gadget order unchanged."""
         invert_phases(self._data[:, -PHASE_NBYTES:])
-
-    def interleaved(
-        self,
-        other: Circuit,
-        self_step: int,
-        other_step: int,
-        other_start: int = 0,
-    ) -> Self:
-        """
-        Interleaves this circuit with the other given circuit, using the given steps.
-        If ``other_start`` is specified, the first ``other_start`` gadgets of the
-        ``other`` circuit are taken at the start of the interleaving.
-        """
-        assert self._validate_interleave_args(other, self_step, other_step, other_start)
-        data = interleave(
-            self._data,
-            other._data,
-            self_step,
-            other_step,
-            other_start,
-        )
-        return Circuit(data, self._num_qubits)
 
     def spider_graph(self) -> SpiderGraph:
         """
@@ -535,10 +520,7 @@ class Circuit:
         return Circuit(commute(self._data, codes), self._num_qubits)
 
     def random_commute(
-        self,
-        *,
-        non_zero: bool = False,
-        rng: int | RNG | None = None
+        self, *, non_zero: bool = False, rng: int | RNG | None = None
     ) -> Self:
         """
         Commutes adjacent gadget pairs in the circuit according to randomly sampled
@@ -640,6 +622,15 @@ class Circuit:
         """
         return len(self._data)
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, Circuit):
+            return NotImplemented
+        return (
+            self.num_qubits == other.num_qubits
+            and self.num_gadgets == other.num_gadgets
+            and all(g == h for g, h in zip(self, other, strict=True))
+        )
+
     def __repr__(self) -> str:
         m, n = self.num_gadgets, self.num_qubits
         return f"<Circuit: {m} gadgets, {n} qubits>"
@@ -649,8 +640,10 @@ class Circuit:
         @staticmethod
         def _validate_circ_shape(num_gadgets: int, num_qubits: int) -> Literal[True]:
             """Validates the shape of a circuit."""
-            validate(num_gadgets, int)
-            validate(num_qubits, int)
+            validate(num_gadgets, SupportsIndex)
+            validate(num_qubits, SupportsIndex)
+            num_gadgets = int(num_gadgets)
+            num_qubits = int(num_qubits)
             if num_gadgets < 0:
                 raise ValueError("Number of gadgets must be non-negative.")
             if num_qubits < 0:
@@ -664,7 +657,8 @@ class Circuit:
             """Validates the arguments of the :meth:`__new__` method."""
             validate(data, CircuitData)
             if num_qubits is not None:
-                validate(num_qubits, int)
+                validate(num_qubits, SupportsIndex)
+                num_qubits = int(num_qubits)
                 if num_qubits < 0:
                     raise ValueError("Number of qubits must be non-negative.")
                 if num_qubits > data.shape[1] * 4:
@@ -713,27 +707,6 @@ class Circuit:
                 )
             if np.any(codes >= 8):
                 raise ValueError("Communication codes must be in range(8).")
-            return True
-
-        def _validate_interleave_args(
-            self,
-            other: Circuit,
-            self_step: int,
-            other_step: int,
-            other_start: int = 0,
-        ) -> Literal[True]:
-            """Validates the arguments to the :meth:`interleaved` method."""
-            validate(other, Circuit)
-            validate(self_step, int)
-            validate(other_step, int)
-            if self.num_qubits != other.num_qubits:
-                raise ValueError("Mismatch in number of qubits.")
-            if not 0 < self_step <= self.num_gadgets:
-                raise ValueError(f"Invalid {self_step = }")
-            if not 0 < other_step <= other.num_gadgets:
-                raise ValueError(f"Invalid {other_step = }")
-            if not 0 <= other_start < other.num_gadgets:
-                raise ValueError(f"Invalid {other_start = }")
             return True
 
         @staticmethod

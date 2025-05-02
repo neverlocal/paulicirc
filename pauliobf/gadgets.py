@@ -659,6 +659,17 @@ class Layer:
         """The number of gadgets (with non-zero phase) in this layer."""
         return len(self._phases)
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, Layer):
+            return NotImplemented
+        print(self._phases)
+        print(other._phases)
+        return (
+            self.num_qubits == other.num_qubits
+            and np.array_equal(self._legs, other._legs)
+            and self._phases == other._phases
+        )
+
     def __repr__(self) -> str:
         legs_str = self.leg_paulistr
         if len(legs_str) > 16:

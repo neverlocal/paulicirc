@@ -533,6 +533,22 @@ class Layer:
         """Selects legs based on the given subset of qubits."""
         return Layer._select_leg_subset(Layer._subset_to_indicator(qubits), legs)
 
+    @classmethod
+    def from_gadgets(
+        cls, gadgets: Iterable[Gadget], num_qubits: int | None = None
+    ) -> Self:
+        """Constructs a layer from the given gadgets."""
+        gadgets = list(gadgets)
+        assert Layer.__validate_gadgets(gadgets, num_qubits)
+        if num_qubits is None:
+            num_qubits = gadgets[0].num_qubits
+        self = cls(num_qubits)
+        for gadget in gadgets:
+            success = self.add_gadget(gadget)
+            if not success:
+                raise ValueError("Given gadgets do not form a single layer.")
+        return self
+
     _phases: dict[int, Phase]
     _legs: PauliArray
     _leg_count: np.ndarray[tuple[int], np.dtype[np.uint32]]
@@ -664,4 +680,20 @@ class Layer:
             Gadget._validate_legs(legs)
             if len(legs) != self.num_qubits:
                 raise ValueError("Number of legs does not match number of qubits.")
+            return True
+
+        @staticmethod
+        def __validate_gadgets(
+            gadgets: Sequence[Gadget], num_qubits: int | None
+        ) -> Literal[True]:
+            validate(gadgets, Sequence[Gadget])
+            if num_qubits is None:
+                if not gadgets:
+                    raise ValueError(
+                        "At least one gadget must be supplied if num_qubits is omitted."
+                    )
+                num_qubits = gadgets[0].num_qubits
+            for gadget in gadgets:
+                if gadget.num_qubits != num_qubits:
+                    raise ValueError("All gadgets must have the same number of qubits.")
             return True

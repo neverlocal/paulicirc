@@ -181,7 +181,7 @@ def are_same_phase(lhs: Phase, rhs: Phase) -> bool:
     """Whether the given phases are deemed to be the same."""
     lhs %= 2 * np.pi
     rhs %= 2 * np.pi
-    return bool(np.isclose(lhs, rhs) or np.isclose(lhs, 2 * np.pi - rhs))
+    return bool(np.isclose(lhs, rhs))
 
 
 @numba_jit
@@ -235,7 +235,7 @@ class Gadget:
     @staticmethod
     def frac2phase(frac: Fraction) -> Phase:
         r"""Converts a fraction of :math:`\pi` to a phase (as a float)."""
-        return float(frac) * np.pi
+        return (float(frac) * np.pi) % (2 * np.pi)
 
     @staticmethod
     def assemble_data(legs: PauliArray, phase: Phase) -> GadgetData:
@@ -620,7 +620,7 @@ class Layer:
                 self._leg_count -= np.where(legs == 0, np.uint32(0), np.uint32(1))
                 self._legs = np.where(self._leg_count == 0, 0, self._legs)
             else:
-                phases[subset] = curr_phase + phase
+                phases[subset] = (curr_phase + phase) % (2 * np.pi)
             return True
         else:
             phases[subset] = phase

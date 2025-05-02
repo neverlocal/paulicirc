@@ -638,10 +638,9 @@ class Layer:
             else:
                 phases[subset] = (curr_phase + phase) % (2 * np.pi)
             return True
-        else:
-            phases[subset] = phase
-            self._leg_count += np.where(legs == 0, np.uint32(0), np.uint32(1))
-            self._legs = np.where(legs == 0, self._legs, legs)
+        phases[subset] = phase
+        self._leg_count += np.where(legs == 0, np.uint32(0), np.uint32(1))
+        self._legs = np.where(legs == 0, self._legs, legs)
         return True
 
     def __iter__(self) -> Iterator[Gadget]:

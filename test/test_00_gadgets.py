@@ -1,12 +1,14 @@
 import numpy as np
 import pytest
 
+from pauliobf._numpy import normalise_phase
 from pauliobf.gadgets import (
     PAULI_CHARS,
     PHASE_NBYTES,
     Gadget,
     PauliArray,
     Phase,
+    are_same_phase,
     is_zero_phase,
     set_phase,
     zero_gadget_data,
@@ -258,3 +260,80 @@ def test_gadget_paulistr(num_qubits: int, legs: PauliArray, phase: Phase) -> Non
     assert g.leg_paulistr == paulistr
     assert g.phase == phase
     assert g == Gadget.from_legs(legs, phase)
+
+
+@pytest.mark.parametrize(
+    "num_qubits,legs,phase,_normalise_phase",
+    [
+        (
+            num_qubits,
+            rng.integers(0, 4, size=num_qubits, dtype=np.uint8),
+            rng.uniform(0, 2 * np.pi),
+            _normalise_phase,
+        )
+        for num_qubits in NUM_QUBITS_RANGE
+        for _ in range(NUM_RNG_SAMPLES)
+        for _normalise_phase in (False, True)
+    ],
+)
+def test_gadget_unitary(
+    num_qubits: int, legs: PauliArray, phase: Phase, _normalise_phase: bool
+) -> None:
+    paulistr = "".join(PAULI_CHARS[leg] for leg in legs)
+    g = Gadget.from_paulistr(paulistr, phase)
+    u = g.unitary(_normalise_phase=_normalise_phase)
+    gs = [Gadget.from_paulistr(paulistr, i * phase) for i in range(5)]
+    v = np.eye(2**num_qubits, dtype=np.complex128)
+    for i, g_i in enumerate(gs):
+        u_i = g_i.unitary()
+        normalise_phase(u_i)
+        normalise_phase(v)
+        assert u_i.shape == v.shape
+        assert u_i.dtype == v.dtype
+        assert np.allclose(u_i, v)
+        v @= u
+
+
+rng = np.random.default_rng(RNG_SEED)
+
+
+@pytest.mark.parametrize(
+    "num_qubits,legs,phase",
+    [
+        (
+            num_qubits,
+            rng.integers(0, 4, size=num_qubits, dtype=np.uint8),
+            rng.uniform(0, 2 * np.pi),
+        )
+        for num_qubits in NUM_QUBITS_RANGE
+        for _ in range(NUM_RNG_SAMPLES)
+    ],
+)
+def test_gadget_clone(num_qubits: int, legs: PauliArray, phase: Phase) -> None:
+    data = Gadget.assemble_data(legs, phase)
+    g = Gadget(data, num_qubits)
+    assert g.clone() == g
+
+
+rng = np.random.default_rng(RNG_SEED)
+
+
+@pytest.mark.parametrize(
+    "num_qubits,legs,phase",
+    [
+        (
+            num_qubits,
+            rng.integers(0, 4, size=num_qubits, dtype=np.uint8),
+            rng.uniform(0, 2 * np.pi),
+        )
+        for num_qubits in NUM_QUBITS_RANGE
+        for _ in range(NUM_RNG_SAMPLES)
+    ],
+)
+def test_gadget_inverse(num_qubits: int, legs: PauliArray, phase: Phase) -> None:
+    data = Gadget.assemble_data(legs, phase)
+    g = Gadget(data, num_qubits)
+    g_inv = g.inverse()
+    assert g_inv.num_qubits == num_qubits
+    assert np.array_equal(g.legs, g_inv.legs)
+    assert are_same_phase(-g.phase, g_inv.phase)

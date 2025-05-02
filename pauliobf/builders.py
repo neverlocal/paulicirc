@@ -16,7 +16,7 @@
 from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from fractions import Fraction
-from typing import Literal, Self, TypeAlias
+from typing import Any, Literal, Self, SupportsIndex, TypeAlias
 
 import numpy as np
 
@@ -94,12 +94,12 @@ class CircuitBuilder:
             paulis: str = legs
             PAULI_CHARS = "_XZY"
             if qubits is None:
-                # TODO: validate legs
+                assert self.__validate_gadget_args(legs, qubits)
                 legs = np.fromiter(map(PAULI_CHARS.index, paulis), dtype=np.uint8)
             else:
                 if isinstance(qubits, QubitIdx):
                     qubits = (qubits,)
-                # TODO: validate legs and qubits
+                assert self.__validate_gadget_args(legs, qubits)
                 legs = np.zeros(n, dtype=np.uint8)
                 for p, q in zip(paulis, qubits, strict=True):
                     legs[q] = PAULI_CHARS.index(p)
@@ -127,12 +127,23 @@ class CircuitBuilder:
         """The number of layers currently in the circuit."""
         return len(self._layers)
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, CircuitBuilder):
+            return NotImplemented
+        return (
+            self.num_qubits == other.num_qubits
+            and self.num_layers == other.num_layers
+            and all(a == b for a, b in zip(self, other))
+        )
+
     def circuit(self) -> Circuit:
         """
         Returns a circuit constructed from the current gadget layers,
         where the gadgets for each layer are listed in insertion order.
         """
-        return Circuit.from_gadgets(g for layer in self for g in layer)
+        return Circuit.from_gadgets(
+            (g for layer in self for g in layer), num_qubits=self._num_qubits
+        )
 
     def random_circuit(self, *, rng: int | RNG | None) -> Circuit:
         """
@@ -171,25 +182,25 @@ class CircuitBuilder:
             normalise_phase(res)
         return res
 
-    def rx(self, angle: PhaseLike, q: QubitIdx) -> None:
-        """Adds a Z rotation on the given qubit."""
-        self.add_gadget(angle, "X", q)
-
     def rz(self, angle: PhaseLike, q: QubitIdx) -> None:
         """Adds a Z rotation on the given qubit."""
         self.add_gadget(angle, "Z", q)
+
+    def rx(self, angle: PhaseLike, q: QubitIdx) -> None:
+        """Adds a Z rotation on the given qubit."""
+        self.add_gadget(angle, "X", q)
 
     def ry(self, angle: PhaseLike, q: QubitIdx) -> None:
         """Adds a Y rotation on the given qubit."""
         self.add_gadget(angle, "Y", q)
 
-    def x(self, q: QubitIdx) -> None:
-        """Adds a X gate on the given qubit."""
-        self.rx(Fraction(1, 1), q)
-
     def z(self, q: QubitIdx) -> None:
         """Adds a Z gate on the given qubit."""
         self.rz(Fraction(1, 1), q)
+
+    def x(self, q: QubitIdx) -> None:
+        """Adds a X gate on the given qubit."""
+        self.rx(Fraction(1, 1), q)
 
     def y(self, q: QubitIdx) -> None:
         """Adds a Y gate on the given qubit."""
@@ -199,7 +210,7 @@ class CircuitBuilder:
         """Adds a √X gate on the given qubit."""
         self.rx(Fraction(1, 2), q)
 
-    def sx_dag(self, q: QubitIdx) -> None:
+    def sxdg(self, q: QubitIdx) -> None:
         """Adds a √X† gate on the given qubit."""
         self.rx(Fraction(-1, 2), q)
 
@@ -207,7 +218,7 @@ class CircuitBuilder:
         """Adds a S gate on the given qubit."""
         self.rz(Fraction(1, 2), q)
 
-    def s_dag(self, q: QubitIdx) -> None:
+    def sdg(self, q: QubitIdx) -> None:
         """Adds a S† gate on the given qubit."""
         self.rz(Fraction(-1, 2), q)
 
@@ -215,7 +226,7 @@ class CircuitBuilder:
         """Adds a T gate on the given qubit."""
         self.rz(Fraction(1, 4), q)
 
-    def t_dag(self, q: QubitIdx) -> None:
+    def tdg(self, q: QubitIdx) -> None:
         """Adds a T† gate on the given qubit."""
         self.rz(Fraction(-1, 4), q)
 
@@ -235,7 +246,7 @@ class CircuitBuilder:
             self.sx(q)
             self.s(q)
 
-    def h_dag(self, q: QubitIdx, *, xzx: bool = False) -> None:
+    def hdg(self, q: QubitIdx, *, xzx: bool = False) -> None:
         """
         Adds a H gate on the given qubit.
 
@@ -243,33 +254,33 @@ class CircuitBuilder:
         but setting ``xzx=True`` decomposes it as ``X(-pi/2)Z(-pi/2)X(-pi/2)`` instead.
         """
         if xzx:
-            self.sx_dag(q)
-            self.s_dag(q)
-            self.sx_dag(q)
+            self.sxdg(q)
+            self.sdg(q)
+            self.sxdg(q)
         else:
-            self.s_dag(q)
-            self.sx_dag(q)
-            self.s_dag(q)
+            self.sdg(q)
+            self.sxdg(q)
+            self.sdg(q)
+
+    def cz(self, c: QubitIdx, t: QubitIdx) -> None:
+        """Adds a CZ gate to the given control and target qubits."""
+        self.sdg(c)
+        self.sdg(t)
+        self.add_gadget(Fraction(1, 2), "ZZ", (c, t))
 
     def cx(self, c: QubitIdx, t: QubitIdx) -> None:
         """Adds a CX gate to the given control and target qubits."""
         self.s(t)
         self.sx(t)
         self.cz(c, t)
-        self.sx_dag(t)
-        self.s_dag(t)
-
-    def cz(self, c: QubitIdx, t: QubitIdx) -> None:
-        """Adds a CZ gate to the given control and target qubits."""
-        self.s_dag(c)
-        self.s_dag(t)
-        self.add_gadget(Fraction(1, 2), "ZZ", (c, t))
+        self.sxdg(t)
+        self.sdg(t)
 
     def cy(self, c: QubitIdx, t: QubitIdx) -> None:
         """Adds a CY gate to the given control and target qubits."""
         self.sx(t)
         self.cz(c, t)
-        self.sx_dag(t)
+        self.sxdg(t)
 
     def swap(self, c: QubitIdx, t: QubitIdx) -> None:
         """Adds a SWAP gate to the given control and target qubits."""
@@ -282,8 +293,8 @@ class CircuitBuilder:
         self.s(t)
         self.sx(t)
         self.ccz(c0, c1, t)
-        self.sx_dag(t)
-        self.s_dag(t)
+        self.sxdg(t)
+        self.sdg(t)
 
     def ccz(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
         """Adds a CCZ gate to the given control and target qubits."""
@@ -299,7 +310,7 @@ class CircuitBuilder:
         """Adds a CCY gate to the given control and target qubits."""
         self.sx(t)
         self.ccz(c0, c1, t)
-        self.sx_dag(t)
+        self.sxdg(t)
 
     def cswap(self, c: QubitIdx, t0: QubitIdx, t1: QubitIdx) -> None:
         """Adds a CSWAP gate to the given control and target qubits."""
@@ -316,7 +327,37 @@ class CircuitBuilder:
         @staticmethod
         def _validate_new_args(num_qubits: int) -> Literal[True]:
             """Validate arguments to the :meth:`__new__` method."""
-            validate(num_qubits, int)
-            if num_qubits <= 0:
-                raise ValueError("Number of qubits must be strictly positive.")
+            validate(num_qubits, SupportsIndex)
+            num_qubits = int(num_qubits)
+            if num_qubits < 0:
+                raise ValueError("Number of qubits must be non-negative.")
+            return True
+
+        def __validate_gadget_args(
+            self,
+            legs: PauliArray | str,
+            qubits: Sequence[QubitIdx] | None,
+        ) -> Literal[True]:
+            if qubits is None:
+                if len(legs) != self.num_qubits:
+                    raise ValueError(
+                        "If qubits are not explicitly passed, the number of legs must "
+                        "be exactly the number of qubits for the circuit builder."
+                    )
+            else:
+                qubit_range = range(self.num_qubits)
+                if not all(q in qubit_range for q in qubits):
+                    raise ValueError(f"Qubit indices must fall in {qubit_range}")
+                if len(legs) != len(qubits):
+                    raise ValueError(
+                        f"Found {len(legs)} legs, expected {len(qubits)} from qubits."
+                    )
+            if isinstance(legs, str):
+                if not all(leg in "_XYZ" for leg in legs):
+                    raise ValueError(
+                        "Leg Pauli chars must be one of '_', 'X', 'Y' or 'Z'."
+                    )
+            else:
+                if not all(0 <= leg_idx < 4 for leg_idx in legs):
+                    raise ValueError("Leg Pauli indices must be in range(4).")
             return True

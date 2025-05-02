@@ -31,11 +31,12 @@ rng = np.random.default_rng(RNG_SEED)
 
 
 @pytest.mark.parametrize(
-    "num_qubits,gadget", [
+    "num_qubits,gadget",
+    [
         (num_qubits, Gadget.random(num_qubits, rng=rng, allow_zero=False))
         for num_qubits in NUM_QUBITS_RANGE
         for _ in range(NUM_RNG_SAMPLES)
-    ]
+    ],
 )
 def test_layer_single_gadget(num_qubits: int, gadget: Gadget) -> None:
     layer = Layer(num_qubits)
@@ -62,7 +63,9 @@ rng = np.random.default_rng(RNG_SEED)
         for _ in range(NUM_RNG_SAMPLES)
     ],
 )
-def test_layer_same_legs(num_qubits: int, legs: PauliArray, phases: Sequence[Phase]) -> None:
+def test_layer_same_legs(
+    num_qubits: int, legs: PauliArray, phases: Sequence[Phase]
+) -> None:
     layer = Layer(num_qubits)
     overall_phase = 0.0
     for phase in phases:
@@ -78,6 +81,7 @@ def test_layer_same_legs(num_qubits: int, legs: PauliArray, phases: Sequence[Pha
 rng = np.random.default_rng(RNG_SEED)
 NUM_SUBSETS = 20
 
+
 def select_leg_subset(subset: Set[int], legs: PauliArray) -> PauliArray:
     selected_legs = legs.copy()
     for q in range(len(legs)):
@@ -85,7 +89,9 @@ def select_leg_subset(subset: Set[int], legs: PauliArray) -> PauliArray:
             selected_legs[q] = 0
     return selected_legs
 
+
 # TODO: separately test that Layer.select_leg_subset matches select_leg_subset
+
 
 @pytest.mark.parametrize(
     "num_qubits,legs,subsets,phases",
@@ -94,14 +100,19 @@ def select_leg_subset(subset: Set[int], legs: PauliArray) -> PauliArray:
             num_qubits,
             rng.integers(1, 4, size=num_qubits, dtype=np.uint8),
             [
-                frozenset(map(int, rng.choice(
-                    num_qubits,
-                    replace=False,
-                    size=rng.integers(0, num_qubits+1)
-                )))
+                frozenset(
+                    map(
+                        int,
+                        rng.choice(
+                            num_qubits,
+                            replace=False,
+                            size=rng.integers(0, num_qubits + 1),
+                        ),
+                    )
+                )
                 for _ in range(NUM_SUBSETS)
             ],
-            rng.uniform(0, 2*np.pi/(NUM_SUBSETS+1), size=NUM_SUBSETS),
+            rng.uniform(0, 2 * np.pi / (NUM_SUBSETS + 1), size=NUM_SUBSETS),
         )
         for num_qubits in NUM_QUBITS_RANGE
         for _ in range(NUM_RNG_SAMPLES)
@@ -111,7 +122,7 @@ def test_layer_different_legs(
     num_qubits: int,
     legs: PauliArray,
     subsets: Sequence[frozenset[int]],
-    phases: Sequence[Phase]
+    phases: Sequence[Phase],
 ) -> None:
     layer = Layer(num_qubits)
     union_subset: set[int] = set()
@@ -134,6 +145,7 @@ def test_layer_different_legs(
     assert len(layer) == len(unique_subsets)
     assert list(layer) == [gadgets[subset] for subset in unique_subsets]
 
+
 @pytest.mark.parametrize(
     "num_qubits,legs,subsets,phases",
     [
@@ -141,14 +153,19 @@ def test_layer_different_legs(
             num_qubits,
             rng.integers(1, 4, size=num_qubits, dtype=np.uint8),
             [
-                frozenset(map(int, rng.choice(
-                    num_qubits,
-                    replace=False,
-                    size=rng.integers(0, num_qubits+1)
-                )))
+                frozenset(
+                    map(
+                        int,
+                        rng.choice(
+                            num_qubits,
+                            replace=False,
+                            size=rng.integers(0, num_qubits + 1),
+                        ),
+                    )
+                )
                 for _ in range(NUM_SUBSETS)
             ],
-            rng.uniform(0, 2*np.pi/(NUM_SUBSETS+1), size=NUM_SUBSETS),
+            rng.uniform(0, 2 * np.pi / (NUM_SUBSETS + 1), size=NUM_SUBSETS),
         )
         for num_qubits in NUM_QUBITS_RANGE
         for _ in range(NUM_RNG_SAMPLES)
@@ -158,7 +175,7 @@ def test_layer_cancelling_phases(
     num_qubits: int,
     legs: PauliArray,
     subsets: Sequence[frozenset[int]],
-    phases: Sequence[Phase]
+    phases: Sequence[Phase],
 ) -> None:
     layer = Layer(num_qubits)
     union_subset: set[int] = set()
@@ -183,6 +200,7 @@ def test_layer_cancelling_phases(
     assert len(layer) == 0
     assert list(layer) == []
 
+
 @pytest.mark.parametrize(
     "num_qubits,legs_fst,legs_snd",
     [
@@ -205,5 +223,8 @@ def test_layer_incompatibility(
         for leg_fst, leg_snd in zip(legs_fst, legs_snd, strict=True)
     )
     layer = Layer(num_qubits)
-    layer.add_gadget(legs_fst, np.pi/2)
-    assert layer.add_gadget(legs_snd, np.pi/2) == legs_compatible
+    layer.add_gadget(legs_fst, np.pi / 2)
+    assert layer.add_gadget(legs_snd, np.pi / 2) == legs_compatible
+
+
+# Unitary?

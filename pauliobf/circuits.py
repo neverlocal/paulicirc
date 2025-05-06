@@ -109,7 +109,7 @@ def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
     data = rng.integers(0, 256, (m, ncols), dtype=np.uint8)
     if n % 4 != 0:
         # zeroes out the padding leg bits (up to 6 bits)
-        mask = 0b11111111 << 2 * (-n % 4) & 0b11111111
+        mask = np.uint8(0b11111111 << 2 * (-n % 4) & 0b11111111)
         data[:, -PHASE_NBYTES - 1] &= mask
     # zeroes out the phase bytes
     data[:, -PHASE_NBYTES:] = 0
@@ -517,6 +517,8 @@ class Circuit:
         """
         codes = np.asarray(codes, dtype=np.uint8)
         assert self._validate_commutation_codes(codes)
+        if len(self) == 0:
+            return self.clone()
         return Circuit(commute(self._data, codes), self._num_qubits)
 
     def random_commute(
@@ -526,6 +528,8 @@ class Circuit:
         Commutes adjacent gadget pairs in the circuit according to randomly sampled
         commutation codes.
         """
+        if len(self) == 0:
+            return self.clone()
         codes = self.random_commutation_codes(non_zero=non_zero, rng=rng)
         return self.commute(codes)
 

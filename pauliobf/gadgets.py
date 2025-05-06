@@ -112,12 +112,6 @@ as a 2D UInt8 NumPy array of shape ``(n, PHASE_NBYTES)``.
 PhaseArray: TypeAlias = FloatArray1D
 """Type alias for a 1D array of phases."""
 
-_LEG_BYTE_SHIFTS = np.arange(6, -1, -2, dtype=np.uint8)
-"""Bit shifts ``[6, 4, 2, 0]`` used on a byte to extract leg information."""
-
-_LEG_BYTE_MASKS = 0b11 * np.ones(4, dtype=np.uint8)
-"""Byte mask used on a byte to extract leg information."""
-
 
 def gadget_data_len(num_qubits: int) -> int:
     """Returns the length of gadget data."""
@@ -129,6 +123,14 @@ def zero_gadget_data(num_qubits: int) -> GadgetData:
     return np.zeros(-(-num_qubits // 4) + PHASE_NBYTES, dtype=np.uint8)
 
 
+# _LEG_BYTE_SHIFTS = np.arange(6, -1, -2, dtype=np.uint8)
+# """Bit shifts ``[6, 4, 2, 0]`` used on a byte to extract leg information."""
+
+# _LEG_BYTE_MASKS = 0b11 * np.ones(4, dtype=np.uint8)
+# """Byte mask used on a byte to extract leg information."""
+
+
+@numba_jit
 def get_gadget_legs(g: GadgetData) -> PauliArray:
     """
     Extract an array of leg information from given gadget data.
@@ -137,9 +139,15 @@ def get_gadget_legs(g: GadgetData) -> PauliArray:
     """
     leg_bytes = g[:-PHASE_NBYTES]
     n = len(leg_bytes)
-    return (
-        leg_bytes.repeat(4) & np.tile(_LEG_BYTE_MASKS << _LEG_BYTE_SHIFTS, n)
-    ) >> np.tile(_LEG_BYTE_SHIFTS, n)
+    legs = np.zeros(4 * n, dtype=np.uint8)
+    legs[::4] = (leg_bytes & 0b11_00_00_00) >> 6
+    legs[1::4] = (leg_bytes & 0b00_11_00_00) >> 4
+    legs[2::4] = (leg_bytes & 0b00_00_11_00) >> 2
+    legs[3::4] = leg_bytes & 0b00_00_00_11
+    return legs
+    # return (
+    #     leg_bytes.repeat(4) & np.tile(_LEG_BYTE_MASKS << _LEG_BYTE_SHIFTS, n)
+    # ) >> np.tile(_LEG_BYTE_SHIFTS, n)
 
 
 def set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:

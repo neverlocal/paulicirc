@@ -5,6 +5,7 @@ import pytest
 
 from pauliobf._numpy import normalise_phase
 from pauliobf.builders import CircuitBuilder
+from pauliobf.circuits import Circuit
 from pauliobf.gadgets import Gadget, Layer
 
 RNG_SEED = 0
@@ -425,10 +426,21 @@ def test_single_gate_unitary(
     assert np.allclose(circ_u, unitary)
 
 
-# TODO: Various specific tests using all the gates.
-#       - Check that the unitary is as expected
-#       - Check that the unitary coincides with the circuit unitary
-#       - Check that the layers are as expected
-#       - For specific examples, check that the statevector is as expected.
-#       - For specific examples, check that the statevector coincides with the
-#         circuit statevector
+rng = np.random.default_rng(RNG_SEED)
+
+
+@pytest.mark.parametrize(
+    "num_qubits,num_gadgets,seed",
+    [
+        (num_qubits, num_gadgets, rng.integers(0, 65536))
+        for num_qubits in NUM_QUBITS_RANGE
+        for num_gadgets in rng.integers(0, 20, size=NUM_RNG_SAMPLES)
+        for _ in range(NUM_RNG_SAMPLES)
+    ],
+)
+def test_circuit_inverse(num_qubits: int, num_gadgets: int, seed: int) -> None:
+    builder = CircuitBuilder(num_qubits)
+    circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
+    for g in circ:
+        builder.add_gadget(g.phase, g.legs)
+    assert np.allclose(builder.unitary(), circ.unitary())

@@ -533,17 +533,33 @@ class Circuit:
         codes = self.random_commutation_codes(non_zero=non_zero, rng=rng)
         return self.commute(codes)
 
-    def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
+    def unitary(
+        self,
+        *,
+        _normalise_phase: bool = True,
+        _use_cupy: bool = False # currently in alpha
+    ) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget circuit."""
-        res = np.eye(2**self.num_qubits, dtype=np.complex128)
+        res: Complex128Array2D = np.eye(2**self.num_qubits, dtype=np.complex128)
+        if _use_cupy:
+            import cupy as cp # type: ignore[import-untyped]
+            res = cp.asarray(res)
         for gadget in self:
-            res = gadget.unitary(_normalise_phase=False) @ res
+            gadget_u = gadget.unitary(_normalise_phase=False)
+            if _use_cupy:
+                gadget_u = cp.asarray(res)
+            res = gadget_u @ res
+        if _use_cupy:
+            res = cp.asnumpy(res).astype(np.complex128)
         if _normalise_phase:
             normalise_phase(res)
         return res
 
     def statevec(
-        self, input: Complex128Array1D, _normalise_phase: bool = False
+        self,
+        input: Complex128Array1D,
+        _normalise_phase: bool = True,
+        _use_cupy: bool = False # currently in alpha
     ) -> Complex128Array1D:
         """
         Computes the statevector resulting from the application of this gadget circuit
@@ -551,8 +567,14 @@ class Circuit:
         """
         assert validate(input, Complex128Array1D)
         res = input
+        if _use_cupy:
+            import cupy as cp
+            res = cp.asarray(res)
         for gadget in self:
-            res = gadget.unitary(_normalise_phase=False) @ res
+            gadget_u = gadget.unitary(_normalise_phase=False)
+            if _use_cupy:
+                gadget_u = cp.asarray(res)
+            res = gadget_u @ res
         if _normalise_phase:
             normalise_phase(res)
         return res

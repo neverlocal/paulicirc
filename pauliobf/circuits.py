@@ -537,12 +537,13 @@ class Circuit:
         self,
         *,
         _normalise_phase: bool = True,
-        _use_cupy: bool = False # currently in alpha
+        _use_cupy: bool = False,  # currently in alpha
     ) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget circuit."""
         res: Complex128Array2D = np.eye(2**self.num_qubits, dtype=np.complex128)
         if _use_cupy:
-            import cupy as cp # type: ignore[import-untyped]
+            import cupy as cp  # type: ignore[import-untyped]
+
             res = cp.asarray(res)
         for gadget in self:
             gadget_u = gadget.unitary(_normalise_phase=False)
@@ -559,7 +560,7 @@ class Circuit:
         self,
         input: Complex128Array1D,
         _normalise_phase: bool = True,
-        _use_cupy: bool = False # currently in alpha
+        _use_cupy: bool = False,  # currently in alpha
     ) -> Complex128Array1D:
         """
         Computes the statevector resulting from the application of this gadget circuit
@@ -569,6 +570,7 @@ class Circuit:
         res = input
         if _use_cupy:
             import cupy as cp
+
             res = cp.asarray(res)
         for gadget in self:
             gadget_u = gadget.unitary(_normalise_phase=False)

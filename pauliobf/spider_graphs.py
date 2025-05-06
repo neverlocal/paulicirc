@@ -21,6 +21,7 @@ from typing import (
     Final,
     Literal,
     Self,
+    SupportsIndex,
     TypeAlias,
     TypedDict,
     final,
@@ -331,7 +332,8 @@ class SpiderGraph:
             max_dim: int | None = None,
         ) -> Literal[True]:
             if edge_capacity is not None:
-                validate(edge_capacity, int)
+                validate(edge_capacity, SupportsIndex)
+                edge_capacity = int(edge_capacity)
                 if edge_capacity <= 0:
                     raise ValueError("Edge capacity must be strictly positive.")
                 if edge_capacity < self._num_edges:
@@ -339,7 +341,8 @@ class SpiderGraph:
                         "Edge capacity must be >= current number of edges."
                     )
             if spider_capacity is not None:
-                validate(spider_capacity, int)
+                validate(spider_capacity, SupportsIndex)
+                spider_capacity = int(spider_capacity)
                 if spider_capacity <= 0:
                     raise ValueError("Spider capacity must be strictly positive.")
                 if spider_capacity < self._num_spiders:
@@ -347,7 +350,8 @@ class SpiderGraph:
                         "Spider capacity must be >= current number of spiders."
                     )
             if max_dim is not None:
-                validate(max_dim, int)
+                validate(max_dim, SupportsIndex)
+                max_dim = int(max_dim)
                 if max_dim <= 0:
                     raise ValueError("Maximum dimension must be strictly positive.")
                 if self._spider_dims and max_dim < np.max(self._spider_dims):

@@ -23,6 +23,7 @@ from typing import (
     Literal,
     Self,
     Sequence,
+    SupportsIndex,
     TypeAlias,
     final,
     overload,
@@ -471,7 +472,8 @@ class Gadget:
             if num_qubits is None:
                 num_qubits = 4 * (len(data) - PHASE_NBYTES)
             else:
-                validate(num_qubits, int)
+                validate(num_qubits, SupportsIndex)
+                num_qubits = int(num_qubits)
                 if num_qubits < 0:
                     raise ValueError("Number of qubits must be non-negative.")
                 if num_qubits > (data.shape[0] - PHASE_NBYTES) * 4:
@@ -680,7 +682,8 @@ class Layer:
         @staticmethod
         def _validate_new_args(num_qubits: int) -> Literal[True]:
             """Validate arguments to the :meth:`__new__` method."""
-            validate(num_qubits, int)
+            validate(num_qubits, SupportsIndex)
+            num_qubits = int(num_qubits)
             if num_qubits < 0:
                 raise ValueError("Number of qubits must be non-negative.")
             return True

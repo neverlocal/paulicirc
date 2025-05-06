@@ -277,3 +277,58 @@ def test_circuit_inverse_pairs(num_qubits: int, num_pairs: int, seed: int) -> No
         circ[2 * pair_idx].inverse() == circ[2 * pair_idx + 1]
         for pair_idx in range(num_pairs)
     )
+
+
+rng = np.random.default_rng(RNG_SEED)
+
+
+@pytest.mark.parametrize(
+    "num_qubits,num_gadgets,seed,non_zero",
+    [
+        (
+            num_qubits,
+            num_gadgets,
+            rng.integers(0, 65536),
+            non_zero,
+        )
+        for num_qubits in NUM_QUBITS_RANGE
+        for num_gadgets in rng.integers(0, 20, size=NUM_RNG_SAMPLES)
+        for non_zero in (False, True)
+    ],
+)
+def test_circuit_random_commute(
+    num_qubits: int, num_gadgets: int, seed: int, non_zero: bool
+) -> None:
+    circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
+    u = circ.unitary()
+    circ.random_commute(non_zero=non_zero, rng=seed + 1)
+    assert np.allclose(u, circ.unitary())
+
+
+rng = np.random.default_rng(RNG_SEED)
+
+
+@pytest.mark.parametrize(
+    "num_qubits,num_gadgets,seed,repeat,non_zero",
+    [
+        (
+            num_qubits,
+            num_gadgets,
+            rng.integers(0, 65536),
+            repeat,
+            non_zero,
+        )
+        for num_qubits in NUM_QUBITS_RANGE
+        for num_gadgets in rng.integers(0, 20, size=NUM_RNG_SAMPLES)
+        for repeat in rng.integers(2, 20, size=NUM_RNG_SAMPLES)
+        for non_zero in (False, True)
+    ],
+)
+def test_circuit_random_commute_repeated(
+    num_qubits: int, num_gadgets: int, seed: int, repeat: int, non_zero: bool
+) -> None:
+    circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
+    u = circ.unitary()
+    for k in range(repeat):
+        circ.random_commute(non_zero=non_zero, rng=seed + 1 + k)
+    assert np.allclose(u, circ.unitary())

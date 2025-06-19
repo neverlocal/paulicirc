@@ -28,12 +28,10 @@ from typing import (
 )
 import euler
 import numpy as np
-import autoray  # type: ignore[import-untyped]
 
 
 from ._numpy import (
     RNG,
-    BoolArray1D,
     Complex128Array1D,
     Complex128Array2D,
     UInt8Array1D,
@@ -45,9 +43,6 @@ from .gadgets import (
     PHASE_NBYTES,
     Gadget,
     GadgetData,
-    Pauli,
-    PauliArray,
-    Phase,
     PhaseArray,
     decode_phases,
     encode_phases,
@@ -146,7 +141,7 @@ def _product_parity(p: GadgetData, q: GadgetData) -> int:
     q_legs = get_gadget_legs(q)
     s = 0
     for p_pauli, q_pauli in zip(p_legs, q_legs):
-        if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]: # type: ignore[comparison-overlap]
+        if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]:  # type: ignore[comparison-overlap]
             s += 1
     return s % 2
 
@@ -521,7 +516,7 @@ class Circuit:
         :meta public:
         """
         assert self._validate_setitem_args(idx, value)
-        self._data[idx] = value._data # type: ignore[index]
+        self._data[idx] = value._data  # type: ignore[index]
 
     def __len__(self) -> int:
         """

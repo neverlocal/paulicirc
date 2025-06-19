@@ -161,9 +161,9 @@ def set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
     n = len(legs)
     leg_data = g[:-PHASE_NBYTES]
     leg_data[:] = 0
-    leg_data[: -(-(n - 0) // 4)] |= legs[0::4] << 6 # type: ignore # ok in Numpy 2.3
-    leg_data[: -(-(n - 1) // 4)] |= legs[1::4] << 4 # type: ignore # ok in Numpy 2.3
-    leg_data[: -(-(n - 2) // 4)] |= legs[2::4] << 2 # type: ignore # ok in Numpy 2.3
+    leg_data[: -(-(n - 0) // 4)] |= legs[0::4] << 6  # type: ignore # ok in Numpy 2.3
+    leg_data[: -(-(n - 1) // 4)] |= legs[1::4] << 4  # type: ignore # ok in Numpy 2.3
+    leg_data[: -(-(n - 2) // 4)] |= legs[2::4] << 2  # type: ignore # ok in Numpy 2.3
     leg_data[: -(-(n - 3) // 4)] |= legs[3::4]
 
 

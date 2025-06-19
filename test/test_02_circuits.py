@@ -49,7 +49,9 @@ def test_random_circuit(num_qubits: int, num_gadgets: int, seed: int) -> None:
     gs = list(circ)
     assert len(gs) == num_gadgets
     assert all(g.num_qubits == num_qubits for g in gs)
-    assert all(are_same_phase(g.phase, phase) for g, phase in zip(gs, circ.phases))
+    assert all(
+        are_same_phase(g.phase, float(phase)) for g, phase in zip(gs, circ.phases)
+    )
     v = np.eye(2**num_qubits, dtype=np.complex128)
     for i, g in enumerate(gs):
         v = g.unitary() @ v

@@ -193,7 +193,13 @@ def test_single_gate_layer(
 
 
 SINGLE_GATE_UNITARY_TEST_CASES: list[
-    tuple[int, str, tuple[Any, ...], dict[str, Any], np.ndarray[Any, np.dtype[Any]]]
+    tuple[
+        int,  # num_qubits
+        str,  # gate label
+        tuple[Any, ...],  # gate args
+        dict[str, Any],  # gate kwargs
+        np.ndarray[Any, np.dtype[Any]],  # expected unitary
+    ]
 ] = [
     *[
         (1, "rz", (t, 0), {}, np.array([[1, 0], [0, exp(t * 1j)]]))
@@ -438,7 +444,7 @@ rng = np.random.default_rng(RNG_SEED)
         for _ in range(NUM_RNG_SAMPLES)
     ],
 )
-def test_circuit_inverse(num_qubits: int, num_gadgets: int, seed: int) -> None:
+def test_building_from_circuit(num_qubits: int, num_gadgets: int, seed: int) -> None:
     builder = CircuitBuilder(num_qubits)
     circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
     for g in circ:

@@ -332,3 +332,34 @@ def test_circuit_random_commute_repeated(
     for k in range(repeat):
         circ.random_commute(non_zero=non_zero, rng=seed + 1 + k)
     assert np.allclose(u, circ.unitary())
+
+
+try:
+    from qiskit import QuantumCircuit  # type: ignore[import-untyped]
+    from qiskit.circuit.library import PauliEvolutionGate  # type: ignore[import-untyped]
+    from qiskit.quantum_info import Pauli, Operator  # type: ignore[import-untyped]
+
+    rng = np.random.default_rng(RNG_SEED)
+
+    @pytest.mark.parametrize(
+        "num_qubits,num_gadgets,seed",
+        [
+            (num_qubits, num_gadgets, rng.integers(0, 65536))
+            for num_qubits in NUM_QUBITS_RANGE
+            for num_gadgets in rng.integers(0, 20, size=NUM_RNG_SAMPLES)
+        ],
+    )
+    def test_random_circuit_qiskit(
+        num_qubits: int, num_gadgets: int, seed: int
+    ) -> None:
+        circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
+        qiskit_circ = QuantumCircuit(num_qubits)
+        for g in circ:
+            gate = PauliEvolutionGate(Pauli(g.leg_paulistr.replace("_", "I")), g.phase)
+            qiskit_circ.append(gate, range(num_qubits))
+        qiskit_unitary = Operator(qiskit_circ).data
+        normalise_phase(qiskit_unitary)
+        assert np.allclose(circ.unitary(), qiskit_unitary)
+
+except ModuleNotFoundError:
+    pass

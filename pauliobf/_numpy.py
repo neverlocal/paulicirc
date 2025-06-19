@@ -19,25 +19,28 @@ from typing import Any, ParamSpec, TypeAlias, TypeVar
 import numpy as np
 import numba  # type: ignore
 
-BoolArray1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.bool_]]
+# tuple[int, ...] used for all shapes to fix regression in Numpy 2.2.6 typing.
+# Seems to be fine in Numpy 2.3, but that's currently not supported by Numba.
+
+BoolArray1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.bool_]]
 """Type alias for 1D bool NumPy arrays."""
 
-UInt8Array1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.uint8]]
+UInt8Array1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.uint8]]
 """Type alias for 1D uint8 NumPy arrays."""
 
-UInt16Array1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.uint16]]
+UInt16Array1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.uint16]]
 """Type alias for 1D uint16 NumPy arrays."""
 
-UInt8Array2D: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.uint8]]
+UInt8Array2D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.uint8]]
 """Type alias for 2D uint8 NumPy arrays."""
 
-FloatArray1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.floating[Any]]]
+FloatArray1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.floating[Any]]]
 """Type alias for 1D float NumPy arrays."""
 
-Complex128Array1D: TypeAlias = np.ndarray[tuple[int], np.dtype[np.complex128]]
+Complex128Array1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.complex128]]
 """Type alias for 1D complex128 NumPy arrays."""
 
-Complex128Array2D: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.complex128]]
+Complex128Array2D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.complex128]]
 """Type alias for 2D complex128 NumPy arrays."""
 
 RNG: TypeAlias = np.random.Generator

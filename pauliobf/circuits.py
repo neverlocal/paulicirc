@@ -147,7 +147,7 @@ def _product_parity(p: GadgetData, q: GadgetData) -> int:
     q_legs = get_gadget_legs(q)
     s = 0
     for p_pauli, q_pauli in zip(p_legs, q_legs):
-        if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]:
+        if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]: # type: ignore[comparison-overlap]
             s += 1
     return s % 2
 
@@ -266,7 +266,7 @@ def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     exp_circ[1 : _m - 2 * (m % 2) : 3] = circ[1::2]
     exp_circ[2 : _m - (m % 2) : 3, -1] = codes % 8
     reshaped_exp_circ = exp_circ.reshape(_m // 3, 3 * _n)
-    np.apply_along_axis(_aux_commute_pair, 1, reshaped_exp_circ)  # type: ignore
+    np.apply_along_axis(_aux_commute_pair, 1, reshaped_exp_circ)
     return exp_circ[~np.all(exp_circ == 0, axis=1)]  # type: ignore
 
 
@@ -640,7 +640,7 @@ class Circuit:
         :meta public:
         """
         assert self._validate_setitem_args(idx, value)
-        self._data[idx] = value._data
+        self._data[idx] = value._data # type: ignore[index]
 
     def __len__(self) -> int:
         """

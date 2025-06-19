@@ -102,8 +102,10 @@ PHASE_NBYTES: Final[int] = (
 
 assert PHASE_NBYTES >= 2, "Code presumes at least 16-bit precision."
 
+# tuple[int, ...] used for all shapes to fix regression in Numpy 2.2.6 typing.
+# Seems to be fine in Numpy 2.3, but that's currently not supported by Numba.
 
-PhaseDataArray: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.uint8]]
+PhaseDataArray: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.uint8]]
 """
 Type alias for a 1D array of encoded phase data,
 as a 2D UInt8 NumPy array of shape ``(n, PHASE_NBYTES)``.
@@ -159,9 +161,9 @@ def set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
     n = len(legs)
     leg_data = g[:-PHASE_NBYTES]
     leg_data[:] = 0
-    leg_data[: -(-(n - 0) // 4)] |= legs[0::4] << 6  # type: ignore
-    leg_data[: -(-(n - 1) // 4)] |= legs[1::4] << 4  # type: ignore
-    leg_data[: -(-(n - 2) // 4)] |= legs[2::4] << 2  # type: ignore
+    leg_data[: -(-(n - 0) // 4)] |= legs[0::4] << 6 # type: ignore # ok in Numpy 2.3
+    leg_data[: -(-(n - 1) // 4)] |= legs[1::4] << 4 # type: ignore # ok in Numpy 2.3
+    leg_data[: -(-(n - 2) // 4)] |= legs[2::4] << 2 # type: ignore # ok in Numpy 2.3
     leg_data[: -(-(n - 3) // 4)] |= legs[3::4]
 
 
@@ -345,7 +347,7 @@ class Gadget:
     @property
     def leg_paulistr(self) -> str:
         """Paulistring representation of the gadget legs."""
-        return "".join(PAULI_CHARS[p] for p in self.legs)
+        return "".join(PAULI_CHARS[int(p)] for p in self.legs)
 
     @property
     def phase(self) -> Phase:
@@ -592,7 +594,7 @@ class Layer:
     @property
     def leg_paulistr(self) -> str:
         """Paulistring representation of the layer's legs."""
-        return "".join(PAULI_CHARS[p] for p in self.legs)
+        return "".join(PAULI_CHARS[int(p)] for p in self.legs)
 
     def phase(self, legs: PauliArray) -> Phase:
         """

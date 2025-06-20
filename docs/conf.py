@@ -110,10 +110,11 @@ skip_missing_references: set[str] = {
     "numpy.complex128",
     "numba.numba.numba.jit",
     "_P",
-    "_R"
+    "_R",
 }
 
 cached_property_descriptors: set[str] = set()
+
 
 def on_missing_reference(
     app: Sphinx, env: BuildEnvironment, node: pending_xref, contnode: Any

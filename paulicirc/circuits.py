@@ -14,7 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from typing import (
     Any,
     Literal,
@@ -26,7 +26,6 @@ from typing import (
     final,
     overload,
 )
-import euler
 import numpy as np
 
 
@@ -37,21 +36,16 @@ from ._numpy import (
     UInt8Array1D,
     UInt8Array2D,
     normalise_phase,
-    numba_jit,
 )
 from .gadgets import (
     PHASE_NBYTES,
     Gadget,
-    GadgetData,
     PhaseArray,
     decode_phases,
     encode_phases,
     gadget_data_len,
-    get_phase,
     invert_phases,
-    gadget_overlap,
-    set_phase,
-    get_gadget_legs,
+    _aux_commute_pair,
 )
 
 if __debug__:
@@ -63,21 +57,10 @@ CircuitData: TypeAlias = UInt8Array2D
 
 CommutationCodeArray: TypeAlias = UInt8Array1D
 """
-Commutation codes are integers in ``range(8)`` indicating how to commute gadets:
-0 means no commutation, values 1-7 means commutation.
+A 1D array of commutation codes, used by :meth:`Circuit.commute`.
 
-If the gadgets have even overlap, the commutation performed on codes 1-7 is
-always the same, ``xz -> zx``.
-If the gadgets have odd overlap, the commutations performed on codes 1-7 are as follows:
-
-- 1 for ``xz -> zyz``
-- 2 for ``xz -> yzy``
-- 3 for ``xz -> xyx``
-- 4 for ``xz -> yxy``
-- 5 for ``xz -> yzx``
-- 6 for ``xz -> zyx``
-- 7 for ``xz -> zxy``
-
+See :class:`Gadget.commute_with` for a description of the commutation procedure
+and associated commutation code conventions.
 """
 
 
@@ -110,148 +93,13 @@ def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
     return data
 
 
-_convert_0zx_yxz = numba_jit(euler.convert_xzx_yxz)
-_convert_0zx_xyz = numba_jit(euler.convert_xzx_xyz)
-_convert_0zx_xzy = numba_jit(euler.convert_xzx_xzy)
-_convert_0zx_yxy = numba_jit(euler.convert_xzx_yxy)
-_convert_0zx_yzy = numba_jit(euler.convert_xzx_yzy)
-_convert_0zx_xyx = numba_jit(euler.convert_xzx_xyx)
-_convert_0zx_zyz = numba_jit(euler.convert_xzx_zyz)
-
-_convert_0xz_yzx = numba_jit(euler.convert_zxz_yzx)
-_convert_0xz_zyx = numba_jit(euler.convert_zxz_zyx)
-_convert_0xz_zxy = numba_jit(euler.convert_zxz_zxy)
-_convert_0xz_yzy = numba_jit(euler.convert_zxz_yzy)
-_convert_0xz_yxy = numba_jit(euler.convert_zxz_yxy)
-_convert_0xz_zyz = numba_jit(euler.convert_zxz_zyz)
-_convert_0xz_xyx = numba_jit(euler.convert_zxz_xyx)
-
-_GadgetDataTriple: TypeAlias = UInt8Array1D
-"""
-1D array containing the linearised data for three gadgets.
-
-Data for the third gadget is set to zero, except for a commutation code
-(cf. :obj:`CommutationCodeArray`) which has been written onto the last byte.
-"""
-
-
-@numba_jit
-def _product_parity(p: GadgetData, q: GadgetData) -> int:
-    p_legs = get_gadget_legs(p)
-    q_legs = get_gadget_legs(q)
-    s = 0
-    for p_pauli, q_pauli in zip(p_legs, q_legs):
-        if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]:  # type: ignore[comparison-overlap]
-            s += 1
-    return s % 2
-
-
-@numba_jit
-def _aux_commute_pair(row: _GadgetDataTriple) -> None:
-    """
-    Auxiliary function used by :func:`commute` to commute an adjacent pair of gadgets.
-    Presumes that a third, zero gadget has been inserted after the two gadgets,
-    and that the data for the tree gadgets was linearised; see :obj:`_GadgetDataTriple`.
-    """
-    TOL = 1e-8
-    n = len(row) // 3
-    xi = row[-1]
-    p: GadgetData = row[:n].copy()
-    q: GadgetData = row[n : 2 * n].copy()
-    a = get_phase(p)
-    b = get_phase(q)
-    if gadget_overlap(p, q) % 2 == 0:
-        if xi != 0:
-            row[2 * n :] = p
-            row[:n] = 0
-        return
-    if xi == 0:
-        return
-    r = p ^ q  # phase bytes will be overwritten later
-    prod_parity = _product_parity(p, q)
-    if xi < 3:
-        if xi == 1:
-            # 0zx -> zyz
-            # 0qp -> qrq
-            row[:n] = q
-            row[n : 2 * n] = r
-            row[2 * n :] = q
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_zyz(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_xyx(0, b, a, TOL)
-        else:  # xi == 2
-            # 0zx -> yzy
-            # 0qp -> rqr
-            row[:n] = r
-            row[n : 2 * n] = q
-            row[2 * n :] = r
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_yzy(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_yxy(0, b, a, TOL)
-    elif xi < 5:
-        if xi == 3:
-            # 0zx -> xyx
-            # 0qp -> prp
-            row[:n] = p
-            row[n : 2 * n] = r
-            row[2 * n :] = p
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_xyx(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_zyz(0, b, a, TOL)
-        else:  # xi == 4
-            # 0zx -> yxy
-            # 0qp -> rpr
-            row[:n] = r
-            row[n : 2 * n] = p
-            row[2 * n :] = r
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_yxy(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_yzy(0, b, a, TOL)
-    else:
-        if xi == 5:
-            # 0zx -> yxz
-            # 0qp -> rpq
-            row[:n] = q
-            row[n : 2 * n] = p
-            row[2 * n :] = r
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_yxz(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_yzx(0, b, a, TOL)
-        elif xi == 6:
-            # 0zx -> xyz
-            # 0qp -> prq
-            row[:n] = q
-            row[n : 2 * n] = r
-            row[2 * n :] = p
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_xyz(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_zyx(0, b, a, TOL)
-        else:  # xi == 7
-            # 0zx -> xzy
-            # 0qp -> pqr
-            row[:n] = r
-            row[n : 2 * n] = q
-            row[2 * n :] = p
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_xzy(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_zxy(0, b, a, TOL)
-    set_phase(row[:n], _c)
-    set_phase(row[n : 2 * n], _b)
-    set_phase(row[2 * n :], _a)
-
-
 def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     """
-    Commutes subsequent gadget pairs in the circuit according to the given codes;
-    see :func:`_aux_commute_pair`.
+    Commutes subsequent gadget pairs in the circuit according to the given codes.
     Expects the number of codes to be ``m//2``, where ``m`` is the number of gadgets.
+
+    See :class:`Gadget.commute_with` for a description of the commutation procedure
+    and associated commutation code conventions.
     """
     m, _n = circ.shape
     _m = m + m // 2 + 2 * (m % 2)
@@ -376,11 +224,13 @@ class Circuit:
         self, *, non_zero: bool = False, rng: int | RNG | None = None
     ) -> CommutationCodeArray:
         """
-        Returns an array of randomly sampled commutation codes for this circuit;
-        see :obj:`CommutationCodeArray`.
+        Returns an array of randomly sampled commutation codes for this circuit.
 
         If ``non_zero`` is set to :obj:`True`, commutation codes are all non-zero,
         forcing commutation for all pairs.
+
+        See :class:`Gadget.commute_with` for a description of the commutation procedure
+        and associated commutation code conventions.
         """
         if not isinstance(rng, RNG):
             rng = np.random.default_rng(rng)
@@ -389,7 +239,10 @@ class Circuit:
     def commute(self, codes: Sequence[int] | CommutationCodeArray) -> Self:
         """
         Commutes adjacent gadget pairs in the circuit according to the given commutation
-        codes; see :obj:`CommutationCodeArray`.
+        codes.
+
+        See :class:`Gadget.commute_with` for a description of the commutation procedure
+        and associated commutation code conventions.
         """
         codes = np.asarray(codes, dtype=np.uint8)
         assert self._validate_commutation_codes(codes)
@@ -403,6 +256,9 @@ class Circuit:
         """
         Commutes adjacent gadget pairs in the circuit according to randomly sampled
         commutation codes.
+
+        See :class:`Gadget.commute_with` for a description of the commutation procedure
+        and associated commutation code conventions.
         """
         if len(self) == 0:
             return self.clone()

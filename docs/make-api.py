@@ -1,5 +1,5 @@
 """
-    A script to generate .rst files for API documentation.
+A script to generate .rst files for API documentation.
 """
 
 import glob

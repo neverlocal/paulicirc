@@ -1,5 +1,5 @@
 r"""
-    Autodoc extension dealing with local type references and function signatures.
+Autodoc extension dealing with local type references and function signatures.
 """
 
 # Some References:

@@ -5,7 +5,7 @@
     "toc_filename": "api-toc.rst",
     "type_alias_dict_filename": "autodoc-type-aliases.json",
     "include_members": {
-        "paulicirc.circuits": [
+        "paulicirc.gadgets": [
             "_aux_commute_pair"
         ]
     },
@@ -27,12 +27,13 @@
             "GadgetData",
             "Phase",
             "PhaseDataArray",
-            "PhaseArray"
+            "PhaseArray",
+            "CommutationCode",
+            "_GadgetDataTriple"
         ],
         "paulicirc.circuits": [
             "CircuitData",
-            "CommutationCodeArray",
-            "_GadgetDataTriple"
+            "CommutationCodeArray"
         ],
         "paulicirc.builders": [
             "PhaseLike",

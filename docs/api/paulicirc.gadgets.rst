@@ -3,6 +3,13 @@ paulicirc.gadgets
 
 .. automodule:: paulicirc.gadgets
 
+CommutationCode
+---------------
+
+.. autoclass:: paulicirc.gadgets.CommutationCode
+    :show-inheritance:
+    :members:
+
 Gadget
 ------
 
@@ -69,6 +76,16 @@ PhaseDataArray
 --------------
 
 .. autodata:: paulicirc.gadgets.PhaseDataArray
+
+_GadgetDataTriple
+-----------------
+
+.. autodata:: paulicirc.gadgets._GadgetDataTriple
+
+_aux_commute_pair
+-----------------
+
+.. autodata:: paulicirc.gadgets._aux_commute_pair
 
 are_same_phase
 --------------

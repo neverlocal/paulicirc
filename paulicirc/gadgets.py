@@ -28,6 +28,7 @@ from typing import (
     final,
     overload,
 )
+import euler
 import numpy as np
 from scipy.linalg import expm  # type: ignore[import-untyped]
 
@@ -228,6 +229,150 @@ def invert_phases(phase_data: PhaseDataArray) -> None:
     phase_data[:] = encode_phases(-decode_phases(phase_data))
 
 
+_convert_0zx_yxz = numba_jit(euler.convert_xzx_yxz)
+_convert_0zx_xyz = numba_jit(euler.convert_xzx_xyz)
+_convert_0zx_xzy = numba_jit(euler.convert_xzx_xzy)
+_convert_0zx_yxy = numba_jit(euler.convert_xzx_yxy)
+_convert_0zx_yzy = numba_jit(euler.convert_xzx_yzy)
+_convert_0zx_xyx = numba_jit(euler.convert_xzx_xyx)
+_convert_0zx_zyz = numba_jit(euler.convert_xzx_zyz)
+
+_convert_0xz_yzx = numba_jit(euler.convert_zxz_yzx)
+_convert_0xz_zyx = numba_jit(euler.convert_zxz_zyx)
+_convert_0xz_zxy = numba_jit(euler.convert_zxz_zxy)
+_convert_0xz_yzy = numba_jit(euler.convert_zxz_yzy)
+_convert_0xz_yxy = numba_jit(euler.convert_zxz_yxy)
+_convert_0xz_zyz = numba_jit(euler.convert_zxz_zyz)
+_convert_0xz_xyx = numba_jit(euler.convert_zxz_xyx)
+
+CommutationCode: TypeAlias = int
+"""
+A number 0-7 describing how two Pauli gadgets are to be commuted past each other.
+See :class:`Gadget.commute_with` for a description of the commutation procedure and
+associated commutation code conventions.
+"""
+
+_GadgetDataTriple: TypeAlias = UInt8Array1D
+"""
+1D array containing the linearised data for three gadgets.
+
+Data for the third gadget is set to zero, except for a commutation code
+(cf. :obj:`CommutationCodeArray`) which has been written onto the last byte.
+"""
+
+
+@numba_jit
+def _product_parity(p: GadgetData, q: GadgetData) -> int:
+    p_legs = get_gadget_legs(p)
+    q_legs = get_gadget_legs(q)
+    s = 0
+    for p_pauli, q_pauli in zip(p_legs, q_legs):
+        if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]:  # type: ignore[comparison-overlap]
+            s += 1
+    return s % 2
+
+
+@numba_jit
+def _aux_commute_pair(row: _GadgetDataTriple) -> None:
+    """
+    Auxiliary function used by :func:`Gadget.commute_with` to commute a pair of gadgets.
+    It operates on a single array, containing the linearised data for the two gadgets
+    to be commuted, as well as auxiliary space; see :obj:`_GadgetDataTriple`.
+    """
+    TOL = 1e-8
+    n = len(row) // 3
+    xi = row[-1]
+    p: GadgetData = row[:n].copy()
+    q: GadgetData = row[n : 2 * n].copy()
+    a = get_phase(p)
+    b = get_phase(q)
+    if gadget_overlap(p, q) % 2 == 0:
+        if xi != 0:
+            row[2 * n :] = p
+            row[:n] = 0
+        return
+    if xi == 0:
+        return
+    r = p ^ q  # phase bytes will be overwritten later
+    prod_parity = _product_parity(p, q)
+    if xi < 3:
+        if xi == 1:
+            # 0zx -> zyz
+            # 0qp -> qrq
+            row[:n] = q
+            row[n : 2 * n] = r
+            row[2 * n :] = q
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_zyz(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_xyx(0, b, a, TOL)
+        else:  # xi == 2
+            # 0zx -> yzy
+            # 0qp -> rqr
+            row[:n] = r
+            row[n : 2 * n] = q
+            row[2 * n :] = r
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_yzy(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_yxy(0, b, a, TOL)
+    elif xi < 5:
+        if xi == 3:
+            # 0zx -> xyx
+            # 0qp -> prp
+            row[:n] = p
+            row[n : 2 * n] = r
+            row[2 * n :] = p
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_xyx(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_zyz(0, b, a, TOL)
+        else:  # xi == 4
+            # 0zx -> yxy
+            # 0qp -> rpr
+            row[:n] = r
+            row[n : 2 * n] = p
+            row[2 * n :] = r
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_yxy(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_yzy(0, b, a, TOL)
+    else:
+        if xi == 5:
+            # 0zx -> yxz
+            # 0qp -> rpq
+            row[:n] = q
+            row[n : 2 * n] = p
+            row[2 * n :] = r
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_yxz(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_yzx(0, b, a, TOL)
+        elif xi == 6:
+            # 0zx -> xyz
+            # 0qp -> prq
+            row[:n] = q
+            row[n : 2 * n] = r
+            row[2 * n :] = p
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_xyz(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_zyx(0, b, a, TOL)
+        else:  # xi == 7
+            # 0zx -> xzy
+            # 0qp -> pqr
+            row[:n] = r
+            row[n : 2 * n] = q
+            row[2 * n :] = p
+            if prod_parity == 0:
+                _a, _b, _c = _convert_0zx_xzy(0, b, a, TOL)
+            else:
+                _a, _b, _c = _convert_0xz_zxy(0, b, a, TOL)
+    set_phase(row[:n], _c)
+    set_phase(row[n : 2 * n], _b)
+    set_phase(row[2 * n :], _a)
+
+
 @final
 class Gadget:
     """A Pauli gadget."""
@@ -417,6 +562,85 @@ class Gadget:
         """
         assert self._validate_same_num_qubits(other)
         return gadget_overlap(self._data, other._data)
+
+    def commute_with(
+        self, other: Gadget, code: CommutationCode
+    ) -> tuple[Gadget, Gadget, Gadget | None]:
+        """
+        Commutes this gadget with the other given gadget, using the given
+        :obj:`CommutationCode` to determine how the gadgets are to be commuted.
+
+        If ``code=0``, the gadgets are not commuted:
+
+        ..code-block:: python
+
+            p.commute_with(q, 0) # -> (p, q, None)
+
+        If the gadgets have even overlap, commutation always swaps them, regardless of
+        the commutation code:
+
+        ..code-block:: python
+
+            # p.overlap(q) % 2 == 0
+            p.commute_with(q, code) # -> (q, p, None)
+
+        If the gadgets have odd overlap, commutation codes 1-7 correspond to the six
+        possible ways to commute them, each resulting in a gadget triple:
+
+        ..code-block:: python
+
+            # p.overlap(q) % 2 != 0
+            # code in range(1, 8)
+            p.commute_with(q, code) # -> (r, s, t)
+
+        The following mathematical procedure is used to compute the triple ``(r, s, t)``
+        of gadgets obtained by commuting ``(p, q)``.
+        Note that gadget ordering is read left-to-right, so that ``(p, q)`` means
+        "p first, q second" and ``(r, s, t)`` means "r first, s second, r third";
+        this is the opposite convention to matrix multiplication, which is read
+        right-to-left instead.
+
+        1. The gadgets ``(p, q)`` are simultaneously mapped, by means of a suitable
+           Clifford circuit, to X and Z rotations on qubit 0.
+           The rotations are either ``(x(0, p.phase), z(0, q.phase))``
+           or ``(z(0, p.phase), x(0, q.phase))``, depending on whether there is an
+           even or odd number of occurrences, respectively, of ZX, XY or YZ pairs in
+           corresponding legs of ``p`` and ``q``.
+        2. The X and Z rotations on qubit 0 are commuted past each other in one of six
+           possible ways, described below and corresponding to commutation codes 1-7.
+           This results in a sequence of three Pauli rotations on qubit 0, chosen
+           between X, Y and Z rotations.
+        3. The three Pauli rotations on qubit 0 are simultaneously mapped back to
+           gadgets ``(r, s, t)`` by the inverse of the Clifford circuit from Step 1.
+
+        The 6 possible commutations for Step 2 correspond to commutation codes 1-7 as
+        follows, each commutation appearing in one of two flavours depending on whether
+        Step 1 resulted in ``(rx, rz)`` or ``(rz, rx)``.
+
+        - Code 1: ``(x, z) -> (z, y, z)`` and ``(z, x) -> (x, y, x)``
+        - Code 2: ``(x, z) -> (y, z, y)`` and ``(z, x) -> (y, x, y)``
+        - Code 3: ``(x, z) -> (x, y, x)`` and ``(z, x) -> (z, y, z)``
+        - Code 4: ``(x, z) -> (y, x, y)`` and ``(z, x) -> (y, z, y)``
+        - Code 5: ``(x, z) -> (z, x, y)`` and ``(z, x) -> (x, z, y)``
+        - Code 6: ``(x, z) -> (z, y, x)`` and ``(z, x) -> (x, y, z)``
+        - Code 7: ``(x, z) -> (y, z, x)`` and ``(z, x) -> (y, x, z)``
+
+        """
+        code %= 8
+        if self.overlap(other) % 2 == 0:
+            return (other, self, None)
+        data = self._data
+        num_qubits = self.num_qubits
+        row: _GadgetDataTriple = np.zeros(3 * (n := len(data)), dtype=np.uint8)
+        row[:n] = data
+        row[n : 2 * n] = other._data
+        row[-1] = code
+        _aux_commute_pair(row)
+        return (
+            Gadget(row[:n], num_qubits),
+            Gadget(row[n : 2 * n], num_qubits),
+            Gadget(row[2 * n :], num_qubits),
+        )
 
     def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget."""

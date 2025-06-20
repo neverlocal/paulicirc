@@ -1,0 +1,9 @@
+sphinx_rtd_theme
+sphinx_autodoc_typehints
+
+typing_extensions
+numpy
+scipy
+numba
+euler
+typing_validation

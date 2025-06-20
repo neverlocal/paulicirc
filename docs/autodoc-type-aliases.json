@@ -1,0 +1,22 @@
+{
+    "BoolArray1D": "paulicirc._numpy.BoolArray1D",
+    "UInt8Array1D": "paulicirc._numpy.UInt8Array1D",
+    "UInt16Array1D": "paulicirc._numpy.UInt16Array1D",
+    "UInt8Array2D": "paulicirc._numpy.UInt8Array2D",
+    "FloatArray1D": "paulicirc._numpy.FloatArray1D",
+    "Complex128Array1D": "paulicirc._numpy.Complex128Array1D",
+    "Complex128Array2D": "paulicirc._numpy.Complex128Array2D",
+    "RNG": "paulicirc._numpy.RNG",
+    "Pauli": "paulicirc.gadgets.Pauli",
+    "PauliArray": "paulicirc.gadgets.PauliArray",
+    "PauliChar": "paulicirc.gadgets.PauliChar",
+    "GadgetData": "paulicirc.gadgets.GadgetData",
+    "Phase": "paulicirc.gadgets.Phase",
+    "PhaseDataArray": "paulicirc.gadgets.PhaseDataArray",
+    "PhaseArray": "paulicirc.gadgets.PhaseArray",
+    "CircuitData": "paulicirc.circuits.CircuitData",
+    "CommutationCodeArray": "paulicirc.circuits.CommutationCodeArray",
+    "_GadgetDataTriple": "paulicirc.circuits._GadgetDataTriple",
+    "PhaseLike": "paulicirc.builders.PhaseLike",
+    "QubitIdx": "paulicirc.builders.QubitIdx"
+}

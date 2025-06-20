@@ -1,0 +1,48 @@
+{
+    "pkg_name": "paulicirc",
+    "pkg_path": "..",
+    "apidocs_folder": "api",
+    "toc_filename": "api-toc.rst",
+    "type_alias_dict_filename": "autodoc-type-aliases.json",
+    "include_members": {
+        "paulicirc.circuits": [
+            "_aux_commute_pair"
+        ]
+    },
+    "type_aliases": {
+        "paulicirc._numpy": [
+            "BoolArray1D",
+            "UInt8Array1D",
+            "UInt16Array1D",
+            "UInt8Array2D",
+            "FloatArray1D",
+            "Complex128Array1D",
+            "Complex128Array2D",
+            "RNG"
+        ],
+        "paulicirc.gadgets": [
+            "Pauli",
+            "PauliArray",
+            "PauliChar",
+            "GadgetData",
+            "Phase",
+            "PhaseDataArray",
+            "PhaseArray"
+        ],
+        "paulicirc.circuits": [
+            "CircuitData",
+            "CommutationCodeArray",
+            "_GadgetDataTriple"
+        ],
+        "paulicirc.builders": [
+            "PhaseLike",
+            "QubitIdx"
+        ]
+    },
+    "exclude_members": {},
+    "include_modules": [],
+    "exclude_modules": [],
+    "member_fullnames": {},
+    "special_class_members": {},
+    "manual_doc": {}
+}

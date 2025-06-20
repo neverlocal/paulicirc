@@ -5,7 +5,7 @@
 [![PyPI version shields.io](https://img.shields.io/pypi/v/paulicirc.svg)](https://pypi.python.org/pypi/paulicirc/)
 [![PyPI status](https://img.shields.io/pypi/status/paulicirc.svg)](https://pypi.python.org/pypi/paulicirc/)
 
-PauliObf is a library for the generation and manipulation of circuits of Pauli gadgets.
+PauliCirc is a library for the creation of circuits of Pauli gadgets.
 
 ## Installation
 

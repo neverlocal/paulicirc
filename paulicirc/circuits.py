@@ -372,7 +372,7 @@ class Circuit:
         :meta public:
         """
         assert self._validate_setitem_args(idx, value)
-        self._data[idx] = value._data  # type: ignore[index]
+        self._data[idx, :] = value._data  # type: ignore[index]
 
     def __len__(self) -> int:
         """

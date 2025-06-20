@@ -15,9 +15,9 @@ You can install the library from PyPI as follows:
 pip install -U paulicirc
 ```
 
-## Usage
+## API
 
-To be written.
+For the full API documentation, see https://paulicirc.readthedocs.io/
 
 ## License
 

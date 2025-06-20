@@ -3,10 +3,10 @@ import numpy as np
 from numpy import pi, sin, cos, sqrt, exp
 import pytest
 
-from pauliobf._numpy import normalise_phase
-from pauliobf.builders import CircuitBuilder
-from pauliobf.circuits import Circuit
-from pauliobf.gadgets import Gadget, Layer
+from paulicirc._numpy import normalise_phase
+from paulicirc.builders import CircuitBuilder
+from paulicirc.circuits import Circuit
+from paulicirc.gadgets import Gadget, Layer
 
 RNG_SEED = 0
 RNG_ALT_SEED = 1

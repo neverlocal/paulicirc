@@ -149,9 +149,9 @@ def _product_parity(p: GadgetData, q: GadgetData) -> int:
 @numba_jit
 def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     """
-    Auxiliary function used by :func:`_commute` to commute an adjacent pair of gadgets.
+    Auxiliary function used by :func:`commute` to commute an adjacent pair of gadgets.
     Presumes that a third, zero gadget has been inserted after the two gadgets,
-    and that the data for the tree gadgets was linearised; see :obj:`_GadgetTriple`.
+    and that the data for the tree gadgets was linearised; see :obj:`_GadgetDataTriple`.
     """
     TOL = 1e-8
     n = len(row) // 3

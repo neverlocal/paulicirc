@@ -2,7 +2,7 @@ from collections.abc import Sequence, Set
 import numpy as np
 import pytest
 
-from pauliobf.gadgets import (
+from paulicirc.gadgets import (
     Gadget,
     Layer,
     PauliArray,

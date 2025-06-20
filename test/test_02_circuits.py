@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from pauliobf._numpy import normalise_phase
-from pauliobf.circuits import Circuit
-from pauliobf.gadgets import Gadget, are_same_phase
+from paulicirc._numpy import normalise_phase
+from paulicirc.circuits import Circuit
+from paulicirc.gadgets import Gadget, are_same_phase
 
 RNG_SEED = 0
 RNG_ALT_SEED = 1

@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from pauliobf._numpy import normalise_phase
-from pauliobf.gadgets import (
+from paulicirc._numpy import normalise_phase
+from paulicirc.gadgets import (
     PAULI_CHARS,
     PHASE_NBYTES,
     Gadget,

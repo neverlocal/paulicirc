@@ -4,7 +4,7 @@ from numpy import pi, sin, cos, sqrt, exp
 import pytest
 
 from paulicirc._numpy import normalise_phase
-from paulicirc.builders import CircuitBuilder
+from paulicirc.builders import CircuitBuilder, LayeredCircuitBuilder
 from paulicirc.circuits import Circuit
 from paulicirc.gadgets import Gadget, Layer
 
@@ -23,6 +23,23 @@ rng = np.random.default_rng(RNG_SEED)
 )
 def test_empty_builder(num_qubits: int) -> None:
     builder = CircuitBuilder(num_qubits)
+    assert builder.num_qubits == num_qubits
+    assert not list(builder)
+    assert len(builder) == 0
+    circ = builder.circuit()
+    assert circ.num_qubits == num_qubits
+    assert circ.num_gadgets == 0
+
+
+rng = np.random.default_rng(RNG_SEED)
+
+
+@pytest.mark.parametrize(
+    "num_qubits",
+    [num_qubits for num_qubits in NUM_QUBITS_RANGE],
+)
+def test_empty_layered_builder(num_qubits: int) -> None:
+    builder = LayeredCircuitBuilder(num_qubits)
     assert builder.num_qubits == num_qubits
     assert builder.num_layers == 0
     assert not builder.layers
@@ -178,11 +195,11 @@ def test_single_gate_layer(
         )
         for layer_gadgets in layer_gadgets_list
     ]
-    builder = CircuitBuilder(num_qubits)
+    builder = LayeredCircuitBuilder(num_qubits)
     getattr(builder, gate)(*args, **kwargs)
     assert builder.num_qubits == num_qubits
     assert builder.num_layers == len(layers)
-    for idx, (layer, builder_layer) in enumerate(zip(layers, builder)):
+    for idx, (layer, builder_layer) in enumerate(zip(layers, builder._layers)):
         assert layer == builder_layer, (
             idx,
             layer,
@@ -432,6 +449,30 @@ def test_single_gate_unitary(
     assert np.allclose(circ_u, unitary)
 
 
+@pytest.mark.parametrize(
+    "num_qubits,gate,args,kwargs,unitary", SINGLE_GATE_UNITARY_TEST_CASES
+)
+def test_single_gate_unitary_layered(
+    num_qubits: int,
+    gate: str,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    unitary: np.ndarray[Any, np.dtype[Any]],
+) -> None:
+    unitary = unitary.astype(np.complex128)
+    normalise_phase(unitary)
+    builder = LayeredCircuitBuilder(num_qubits)
+    getattr(builder, gate)(*args, **kwargs)
+    assert builder.num_qubits == num_qubits
+    u = builder.unitary()
+    circ = builder.circuit()
+    circ_u = circ.unitary()
+    assert u.shape == unitary.shape
+    assert np.allclose(u, unitary)
+    assert circ_u.shape == unitary.shape
+    assert np.allclose(circ_u, unitary)
+
+
 rng = np.random.default_rng(RNG_SEED)
 
 
@@ -446,6 +487,28 @@ rng = np.random.default_rng(RNG_SEED)
 )
 def test_building_from_circuit(num_qubits: int, num_gadgets: int, seed: int) -> None:
     builder = CircuitBuilder(num_qubits)
+    circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
+    for g in circ:
+        builder.add_gadget(g.phase, g.legs)
+    assert np.allclose(builder.unitary(), circ.unitary())
+
+
+rng = np.random.default_rng(RNG_SEED)
+
+
+@pytest.mark.parametrize(
+    "num_qubits,num_gadgets,seed",
+    [
+        (num_qubits, num_gadgets, rng.integers(0, 65536))
+        for num_qubits in NUM_QUBITS_RANGE
+        for num_gadgets in rng.integers(0, 20, size=NUM_RNG_SAMPLES)
+        for _ in range(NUM_RNG_SAMPLES)
+    ],
+)
+def test_building_from_circuit_layered(
+    num_qubits: int, num_gadgets: int, seed: int
+) -> None:
+    builder = LayeredCircuitBuilder(num_qubits)
     circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
     for g in circ:
         builder.add_gadget(g.phase, g.legs)

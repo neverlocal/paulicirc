@@ -386,7 +386,7 @@ class Gadget:
         default is ``prec=8``, corresponding to :math:`\pi/256`.
         """
         K = 2**prec
-        return Fraction(round(phase / np.pi * K) % K, K)
+        return Fraction(round(phase / np.pi * K) % (2*K), K)
 
     @staticmethod
     def frac2phase(frac: Fraction) -> Phase:

@@ -404,6 +404,13 @@ class Circuit:
         m, n = self.num_gadgets, self.num_qubits
         return f"<Circuit: {m} gadgets, {n} qubits>"
 
+    def __sizeof__(self) -> int:
+        return (
+            object.__sizeof__(self)
+            + self._num_qubits.__sizeof__()
+            + self._data.__sizeof__()
+        )
+
     if "qiskit" in globals():
 
         def to_qiskit(self) -> QiskitQuantumCircuit:

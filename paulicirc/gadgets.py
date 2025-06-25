@@ -386,7 +386,7 @@ class Gadget:
         default is ``prec=8``, corresponding to :math:`\pi/256`.
         """
         K = 2**prec
-        return Fraction(round(phase / np.pi * K) % (2*K), K)
+        return Fraction(round(phase / np.pi * K) % (2 * K), K)
 
     @staticmethod
     def frac2phase(frac: Fraction) -> Phase:
@@ -687,6 +687,14 @@ class Gadget:
             legs_str = legs_str[:8] + "..." + legs_str[-8:]
         return f"<Gadget: {legs_str}, {self.phase:.15f}>"
 
+    def __sizeof__(self) -> int:
+        return (
+            object.__sizeof__(self)
+            + self._data.__sizeof__()
+            + self._num_qubits.__sizeof__()
+            + self._ephemeral.__sizeof__()
+        )
+
     if __debug__:
 
         @staticmethod
@@ -910,6 +918,18 @@ class Layer:
         if len(legs_str) > 16:
             legs_str = legs_str[:8] + "..." + legs_str[-8:]
         return f"<Layer: {legs_str}, {len(self)} gadgets>"
+
+    def __sizeof__(self) -> int:
+        return (
+            object.__sizeof__(self)
+            + self._phases.__sizeof__()
+            + sum(
+                key.__sizeof__() + value.__sizeof__()
+                for key, value in self._phases.items()
+            )
+            + self._legs.__sizeof__()
+            + self._leg_count.__sizeof__()
+        )
 
     if __debug__:
 

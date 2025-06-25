@@ -376,6 +376,14 @@ class CircuitBuilder(CircuitBuilderBase):
         m, n = len(self), self.num_qubits
         return f"<CircuitBuilder: {m} gadgets, {n} qubits>"
 
+    def __sizeof__(self) -> int:
+        return (
+            object.__sizeof__(self)
+            + self._num_qubits.__sizeof__()
+            + self._num_gadgets.__sizeof__()
+            + self._circuit.__sizeof__()
+        )
+
 
 class LayeredCircuitBuilder(CircuitBuilderBase):
     """
@@ -439,3 +447,11 @@ class LayeredCircuitBuilder(CircuitBuilderBase):
     def __repr__(self) -> str:
         m, n = self.num_layers, self.num_qubits
         return f"<LayeredCircuitBuilder: {m} layers, {n} qubits>"
+
+    def __sizeof__(self) -> int:
+        return (
+            object.__sizeof__(self)
+            + self._num_qubits.__sizeof__()
+            + self._layers.__sizeof__()
+            + sum(layer.__sizeof__() for layer in self._layers)
+        )

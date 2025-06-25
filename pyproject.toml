@@ -13,6 +13,7 @@ dependencies = [
     "numba>=0.61.2",
     "euler>=1.0.2.post0",
     "typing-validation>=1.2.12",
+    "optmanage>=1.1.1",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

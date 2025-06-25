@@ -7,3 +7,4 @@ scipy
 numba
 euler
 typing_validation
+optmanage

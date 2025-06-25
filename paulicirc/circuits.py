@@ -51,6 +51,15 @@ from .gadgets import (
 if __debug__:
     from typing_validation import validate
 
+try:
+    import qiskit  # type: ignore[import-untyped]
+    from qiskit import QuantumCircuit as QiskitQuantumCircuit
+    from qiskit.circuit.library import PauliEvolutionGate as QiskitPauliEvolutionGate  # type: ignore[import-untyped]
+    from qiskit.quantum_info import Pauli as QiskitPauli  # type: ignore[import-untyped]
+
+except ModuleNotFoundError:
+    pass
+
 
 CircuitData: TypeAlias = UInt8Array2D
 """Type alias for data encoding a circuit of Pauli gadgets."""
@@ -394,6 +403,27 @@ class Circuit:
     def __repr__(self) -> str:
         m, n = self.num_gadgets, self.num_qubits
         return f"<Circuit: {m} gadgets, {n} qubits>"
+
+    if "qiskit" in globals():
+
+        def to_qiskit(self) -> QiskitQuantumCircuit:
+            qiskit_circ = QiskitQuantumCircuit(num_qubits := self.num_qubits)
+            for g in self:
+                gate = QiskitPauliEvolutionGate(
+                    QiskitPauli(g.leg_paulistr.replace("_", "I")), g.phase
+                )
+                qiskit_circ.append(gate, range(num_qubits))
+            return qiskit_circ
+
+    else:  # mock qiskit-specific methods
+
+        def __to_qiskit(self) -> Any:
+            raise ModuleNotFoundError("The 'qiskit' package is not installed.")
+
+        __to_qiskit.__name__ = "to_qiskit"
+        __to_qiskit.__qualname__ = "Circuit.to_qiskit"
+        to_qiskit = __to_qiskit
+        del __to_qiskit
 
     if __debug__:
 

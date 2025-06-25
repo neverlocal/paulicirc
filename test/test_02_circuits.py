@@ -337,9 +337,7 @@ def test_circuit_random_commute_repeated(
 
 
 try:
-    from qiskit import QuantumCircuit  # type: ignore[import-untyped]
-    from qiskit.circuit.library import PauliEvolutionGate  # type: ignore[import-untyped]
-    from qiskit.quantum_info import Pauli, Operator  # type: ignore[import-untyped]
+    from qiskit.quantum_info import Operator  # type: ignore[import-untyped]
 
     rng = np.random.default_rng(RNG_SEED)
 
@@ -355,10 +353,7 @@ try:
         num_qubits: int, num_gadgets: int, seed: int
     ) -> None:
         circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
-        qiskit_circ = QuantumCircuit(num_qubits)
-        for g in circ:
-            gate = PauliEvolutionGate(Pauli(g.leg_paulistr.replace("_", "I")), g.phase)
-            qiskit_circ.append(gate, range(num_qubits))
+        qiskit_circ = circ.to_qiskit()
         qiskit_unitary = Operator(qiskit_circ).data
         normalise_phase(qiskit_unitary)
         assert np.allclose(circ.unitary(), qiskit_unitary)

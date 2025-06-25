@@ -38,6 +38,7 @@ from ._numpy import (
     normalise_phase,
 )
 from .gadgets import (
+    PHASE_DTYPE,
     PHASE_NBYTES,
     Gadget,
     PhaseArray,
@@ -86,10 +87,7 @@ def _zero_circ(m: int, n: int) -> CircuitData:
 
 def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
     """
-    Returns a uniformly random circuit with ``m`` gadgets on ``n`` qubits,
-    where all gadgets have no legs and zero phase.
-
-    Presumes that the number ``n`` of qubits is divisible by 4.
+    Returns a uniformly random circuit with ``m`` gadgets on ``n`` qubits.
     """
     ncols = PHASE_NBYTES - (-n // 4)
     data = rng.integers(0, 256, (m, ncols), dtype=np.uint8)
@@ -97,8 +95,9 @@ def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
         # zeroes out the padding leg bits (up to 6 bits)
         mask = np.uint8(0b11111111 << 2 * (-n % 4) & 0b11111111)
         data[:, -PHASE_NBYTES - 1] &= mask
-    # zeroes out the phase bytes
-    data[:, -PHASE_NBYTES:] = 0
+    # sets the phase bytes
+    phases = rng.uniform(0.0, 2*np.pi, size=m).astype(PHASE_DTYPE)
+    data[:, -PHASE_NBYTES:] = encode_phases(phases)
     return data
 
 

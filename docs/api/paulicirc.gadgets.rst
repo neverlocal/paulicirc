@@ -107,7 +107,7 @@ _aux_commute_pair
 are_same_phase
 --------------
 
-.. autodata:: paulicirc.gadgets.are_same_phase
+.. autofunction:: paulicirc.gadgets.are_same_phase
 
 broadcast_idxs
 --------------

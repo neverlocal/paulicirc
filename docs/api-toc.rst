@@ -7,3 +7,4 @@
     api/paulicirc.builders
     api/paulicirc.circuits
     api/paulicirc.gadgets
+    api/paulicirc.utils

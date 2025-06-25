@@ -45,6 +45,8 @@ You can install the latest release from `PyPI <https://pypi.org/project/dag-cbor
 Usage
 =======
 
+This library depends on
+
 Pauli Gadgets
 -------------
 
@@ -54,19 +56,17 @@ Pauli gadgets are also known as Pauli exponentials, or Pauli evolution gates (cf
 Pauli gadgets are the basic ingredient of quantum circuits in the PauliCirc library, and the `Gadget <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#gadget>`_ class provides an interface to create, access and manipulate individual gadget data.
 
 >>> from paulicirc import Gadget
->>> import numpy as np
->>> from numpy import pi
 
 Constructors
 ^^^^^^^^^^^^
 
 There are various primitive ways to construct gadgets, implemented as class methods.
-A "zero gadget" — one corresponding to the identity rotation — can be constructed via the `Gadget.zero <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.zero>`_ class method, passing the desired number of qubits:
+A "zero gadget" — one corresponding to the identity rotation — can be constructed via the `Gadget.zero <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.zero>`_ class method, passing the desired number of qubits:
 
 >>> Gadget.zero(10)
 <Gadget: __________, 0π>
 
-A random gadget — one where the rotation axis and angle are independently and uniformly sampled — can be constructed via the `Gadget.random <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.random>`_ class method, passing the desired number of qubits:
+A random gadget — one where the rotation axis and angle are independently and uniformly sampled — can be constructed via the `Gadget.random <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.random>`_ class method, passing the desired number of qubits:
 
 >>> Gadget.random(10)
 <Gadget: Z_Z_ZXXX_Y, ~17π/16>
@@ -76,14 +76,14 @@ Optionally, an integer seed or a Numpy `random generator <https://numpy.org/doc/
 >>> Gadget.random(10, rng=0)
 <Gadget: XZYYYY_Z_Y, ~21π/256>
 
-The `Gadget.from_paulistr <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.from_paulistr>`_ class method can be used to create a gadget from a Paulistring and a phase:
+The `Gadget.from_paulistr <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.from_paulistr>`_ class method can be used to create a gadget from a Paulistring and a phase:
 
 >>> Gadget.from_paulistr("XZYYYY_Z_Y", 0.25744424357926954)
 <Gadget: XZYYYY_Z_Y, ~21π/256>
 >>> Gadget.from_paulistr("Z__XY_", 3*pi/4)
 <Gadget: Z__XY_, 3π/4>
 
-The `Gadget.from_sparse_paulistr <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.from_sparse_paulistr>`_ class method can be used to create a gadget from a sparse Paulistring instead, specified by giving a Paulistring, the qubits to which it applies, and the overall number of qubits:
+The `Gadget.from_sparse_paulistr <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.from_sparse_paulistr>`_ class method can be used to create a gadget from a sparse Paulistring instead, specified by giving a Paulistring, the qubits to which it applies, and the overall number of qubits:
 
 >>> Gadget.from_sparse_paulistr("ZXY", [0, 3, 4], 6, 3*pi/4)
 <Gadget: Z__XY_, 3π/4>
@@ -108,7 +108,7 @@ At a lower level, the legs are instead represented as an array of integers 0-4:
 >>> g.legs
 array([1, 2, 3, 3, 3, 3, 0, 2, 0, 3], dtype=uint8)
 
-The `Gadget.from_legs <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.from_legs>`_ class method can be used to construct a gadget from such array data instead of a Paulistring.
+The `Gadget.from_legs <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.from_legs>`_ class method can be used to construct a gadget from such array data instead of a Paulistring.
 The rotation angle is known as the gadget's phase, represented as a floating point number:
 
 >>> g.phase
@@ -137,7 +137,7 @@ Gadgets are mutable, with the possibility of setting both phase and legs:
 >>> g
 <Gadget: _XZY_XZY_X, π/8>
 
-An independently mutable copy of a gadget can be obtained via the `Gadget.clone <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.clone>`_ method:
+An independently mutable copy of a gadget can be obtained via the `Gadget.clone <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.clone>`_ method:
 
 >>> g = Gadget.random(10, rng=0)
 >>> g_copy = g.clone()
@@ -149,14 +149,14 @@ False
 Unitary Representation
 ^^^^^^^^^^^^^^^^^^^^^^
 
-The unitary representation of a gadget can be obtained via the `Gadget.unitary <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.unitary>`_ method:
+The unitary representation of a gadget can be obtained via the `Gadget.unitary <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.unitary>`_ method:
 
 >>> g = Gadget.from_paulistr("Z", pi/2)
 >>> g.unitary().round(3)
 array([[ 1.-0.j,  0.+0.j],
        [ 0.+0.j, -0.+1.j]])
 
-The action of a gadget on a statevector can be computed via the `Gadget.statevec <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.statevec>`_ method:
+The action of a gadget on a statevector can be computed via the `Gadget.statevec <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.statevec>`_ method:
 
 >>> state = np.array([1/np.sqrt(2), 1/np.sqrt(2)])
 >>> g.statevec(state)
@@ -167,7 +167,7 @@ array([0.70710678+0.j, 0.+0.70710678j])
 Operations
 ^^^^^^^^^^
 
-The inverse of a gadget is the gadget with same legs and phase negated, and it can be obtained via the `Gadget.inverse <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.inverse>`_ method:
+The inverse of a gadget is the gadget with same legs and phase negated, and it can be obtained via the `Gadget.inverse <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.inverse>`_ method:
 
 >>> g = Gadget.random(10, rng=0)
 >>> g
@@ -175,7 +175,7 @@ The inverse of a gadget is the gadget with same legs and phase negated, and it c
 >>> g.inverse()
 <Gadget: XZYYYY_Z_Y, ~491π/256>
 
-The `Gadget.commutes_with <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.commutes_with>`_ method can be used to check whether a gadget commutes with another gadget:
+The `Gadget.commutes_with <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.commutes_with>`_ method can be used to check whether a gadget commutes with another gadget:
 
 >>> g = Gadget.from_paulistr("XY_YX", pi/2)
 >>> h = Gadget.from_paulistr("ZZX_X", pi/2)
@@ -183,7 +183,7 @@ The `Gadget.commutes_with <https://paulicirc.readthedocs.io/en/latest/api/paulic
 True
 
 The overlap between two gadgets is defined to be the number of qubits where (i) both gadgets have a leg different from ``_`` and (ii) the legs of the two gadgets are different.
-Whether two gadgets commute depends on whether their overlap is even, and the overlap can be computed via the `Gadget.overlap <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.overlap>`_ method:
+Whether two gadgets commute depends on whether their overlap is even, and the overlap can be computed via the `Gadget.overlap <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.overlap>`_ method:
 
 >>> g.overlap(h)
 2
@@ -198,7 +198,7 @@ False
 1
 
 Gadgets which don't commute can still be "commuted past" each other by changing their phases and introducing a third gadget with a specially chosen phase.
-The logic to do so is implemented by the `Gadget.commute_past <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.commute_past>`_ method.
+The logic to do so is implemented by the `Gadget.commute_past <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.commute_past>`_ method.
 As its second argument, the method takes a numeric code 0-7.
 Code 0 means to not commute the gadgets:
 
@@ -222,7 +222,7 @@ Codes 1-7 correspond to six possible ways to commute the gadgets past each other
 >>> g.commute_past(h, 7)
 (<Gadget: XX, ~π/4>, <Gadget: _Z, ~0π>, <Gadget: XY, π/2>)
 
-For technical details, see the documentation of the `Gadget.commute_past <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.Gadget.commute_past>`_ method and the `euler <https://github.com/neverlocal/euler>`_ package.
+For technical details, see the documentation of the `Gadget.commute_past <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.commute_past>`_ method and the `euler <https://github.com/neverlocal/euler>`_ package.
 
 Approximation
 ^^^^^^^^^^^^^
@@ -260,8 +260,34 @@ Note that the precision used by equality comparison is usually much higher than 
 >>> g.phase
 0.25744424357926954
 
-The precise logic used for phase comparison is implemented by the `are_same_phase <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.gadgets.are_same_phase>` function.
+The precise logic used for phase comparison is implemented by the `are_same_phase <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.are_same_phase>` function.
 See documentation for the `optmanage <https://optmanage.readthedocs.io/en/latest/>` package for specific usage details on the PauliCirc option manager.
+
+
+Pauli Circuits
+--------------
+
+The core data structure for the library is the `Circuit <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#circuit>`_ class, a memory-efficient implementation of quantum circuits of Pauli gadgets with vectorized operations:
+
+>>> from paulicirc import Circuit
+
+Constructors
+^^^^^^^^^^^^
+There are various primitive ways to construct circuits, implemented as class methods.
+A "zero circuit" — one where all gadgets are zero gadgets — can be constructed via the `Gadget.zero <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.circuits.html#paulicirc.circuits.Circuit.zero>`_ class method, passing the desired number of qubits:
+
+>>> Gadget.zero(10)
+<Gadget: __________, 0π>
+
+A random gadget — one where the rotation axis and angle are independently and uniformly sampled — can be constructed via the `Gadget.random <https://paulicirc.readthedocs.io/en/latest/api/paulicirc.gadgets.html#paulicirc.gadgets.Gadget.random>`_ class method, passing the desired number of qubits:
+
+>>> Gadget.random(10)
+<Gadget: Z_Z_ZXXX_Y, ~17π/16>
+
+Optionally, an integer seed or a Numpy `random generator <https://numpy.org/doc/stable/reference/random/generator.html>` can be passed as the ``rng`` argument, for reproducibility:
+
+>>> Gadget.random(10, rng=0)
+<Gadget: XZYYYY_Z_Y, ~21π/256>
 
 
 API

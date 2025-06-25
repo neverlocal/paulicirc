@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import paulicirc
 from paulicirc._numpy import normalise_phase
 from paulicirc.gadgets import (
     PAULI_CHARS,
@@ -107,7 +108,8 @@ rng = np.random.default_rng(RNG_SEED)
     ],
 )
 def test_gadget_phase_frac_conversion(prec: int, phase: Phase) -> None:
-    frac = Gadget.phase2frac(phase, prec=prec)
+    with paulicirc.options(display_prec=prec):
+        frac = Gadget.phase2frac(phase)
     frac_phase = Gadget.frac2phase(frac)
     assert (
         abs((frac_phase - phase) % (2 * np.pi)) < 2 * 2**-prec

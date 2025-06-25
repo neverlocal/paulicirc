@@ -3,7 +3,7 @@ name = "paulicirc"
 version = "0.1.0"
 authors = [{ name = "NeverLocal" }]
 description = "Quantum circuit obfuscation based on Pauli gadgets."
-readme = "README.md"
+readme = "README.rst"
 requires-python = ">=3.10"
 license = "LGPL-3.0"
 license-files = ["LICENSE"]

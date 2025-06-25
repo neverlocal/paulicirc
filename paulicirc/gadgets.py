@@ -38,6 +38,7 @@ from ._numpy import (
     RNG,
     Complex128Array1D,
     Complex128Array2D,
+    ComplexArray1D,
     FloatArray1D,
     UInt8Array1D,
     normalise_phase,
@@ -225,12 +226,12 @@ def is_zero_phase(phase: Phase) -> bool:
     return bool(phase < atol or 2 * np.pi - phase < atol)
 
 
-@numba_jit
 def are_same_phase(lhs: Phase, rhs: Phase) -> bool:
     """Whether the given phases are deemed to be the same."""
+    from .utils import options
     lhs %= 2 * np.pi
     rhs %= 2 * np.pi
-    return bool(np.isclose(lhs, rhs))
+    return bool(np.isclose(lhs, rhs, options.rtol, options.atol))
 
 
 @numba_jit
@@ -285,7 +286,7 @@ _convert_0xz_xyx = numba_jit(euler.convert_zxz_xyx)
 CommutationCode: TypeAlias = int
 """
 A number 0-7 describing how two Pauli gadgets are to be commuted past each other.
-See :class:`Gadget.commute_with` for a description of the commutation procedure and
+See :class:`Gadget.commute_past` for a description of the commutation procedure and
 associated commutation code conventions.
 """
 
@@ -312,7 +313,7 @@ def _product_parity(p: GadgetData, q: GadgetData) -> int:
 @numba_jit
 def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     """
-    Auxiliary function used by :func:`Gadget.commute_with` to commute a pair of gadgets.
+    Auxiliary function used by :func:`Gadget.commute_past` to commute a pair of gadgets.
     It operates on a single array, containing the linearised data for the two gadgets
     to be commuted, as well as auxiliary space; see :obj:`_GadgetDataTriple`.
     """
@@ -415,14 +416,15 @@ class Gadget:
     """A Pauli gadget."""
 
     @staticmethod
-    def phase2frac(phase: Phase, *, prec: int = 8) -> Fraction:
+    def phase2frac(phase: Phase) -> Fraction:
         r"""
         Converts a phase to a fraction of :math:`\pi`.
-
-        The optional ``prec`` kwarg can be used to set a number of bits of precision;
-        default is ``prec=8``, corresponding to :math:`\pi/256`.
+        The number of bits of precision is controlled by the value
+        of :attr:`options.display_prec <paulicirc.utils.PauliCircOptions.display_prec>`:
+        this is set to 8 by default, corresponding to multiples of :math:`\pi/256`.
         """
-        K = 2**prec
+        from .utils import options
+        K = 2**options.display_prec
         return Fraction(round(phase / np.pi * K) % (2 * K), K)
 
     @staticmethod
@@ -456,12 +458,32 @@ class Gadget:
         data = Gadget.assemble_data(legs, phase)
         return cls(data, num_qubits)
 
+    @staticmethod
+    def legs_from_paulistr(paulistr: str) -> PauliArray:
+        """Returns the legs corresponding to the given paulistr."""
+        assert Gadget._validate_paulistr(paulistr)
+        return np.fromiter((PAULI_CHARS.index(p) for p in paulistr), dtype=np.uint8)
+
+    @staticmethod
+    def legs_from_sparse_paulistr(
+        paulistr: str,
+        qubits: QubitIdx | QubitIdxs,
+        num_qubits: int,
+    ) -> PauliArray:
+        """Returns the legs corresponding to the given sparse paulistr."""
+        if isinstance(qubits, QubitIdx):
+            qubits = (qubits,)
+        assert Gadget._validate_sparse_paulistr(paulistr, qubits, num_qubits)
+        legs = np.zeros(num_qubits, dtype=np.uint8)
+        for idx, p in zip(qubits, paulistr):
+            legs[idx] = PAULI_CHARS.index(p)
+        return legs
+
     @classmethod
     def from_paulistr(cls, paulistr: str, phase: PhaseLike) -> Self:
         """Returns the gadget with given legs (as paulistr) and phase."""
-        assert Gadget._validate_paulistr(paulistr)
-        num_qubits = len(paulistr)
-        legs = np.fromiter((PAULI_CHARS.index(p) for p in paulistr), dtype=np.uint8)
+        legs = Gadget.legs_from_paulistr(paulistr)
+        num_qubits = len(legs)
         data = Gadget.assemble_data(legs, phase)
         return cls(data, num_qubits)
 
@@ -474,12 +496,7 @@ class Gadget:
         phase: PhaseLike,
     ) -> Self:
         """Returns the gadget with given legs (as a sparse paulistr) and phase."""
-        if isinstance(qubits, QubitIdx):
-            qubits = (qubits,)
-        assert Gadget._validate_sparse_paulistr(paulistr, qubits, num_qubits)
-        legs = np.zeros(num_qubits, dtype=np.uint8)
-        for idx, p in zip(qubits, paulistr):
-            legs[idx] = PAULI_CHARS.index(p)
+        legs = Gadget.legs_from_sparse_paulistr(paulistr, qubits, num_qubits)
         data = Gadget.assemble_data(legs, phase)
         return cls(data, num_qubits)
 
@@ -542,10 +559,13 @@ class Gadget:
         return get_gadget_legs(self._data)[: self._num_qubits]
 
     @legs.setter
-    def legs(self, value: Sequence[Pauli] | PauliArray) -> None:
+    def legs(self, value: Sequence[Pauli] | PauliArray | str) -> None:
         """Sets the legs of the gadget."""
-        assert validate(value, Sequence[Pauli] | PauliArray)
-        legs: PauliArray = np.asarray(value, dtype=np.uint8)
+        assert validate(value, Sequence[Pauli] | PauliArray | str)
+        if isinstance(value, str):
+            legs = Gadget.legs_from_paulistr(value)
+        else:
+            legs = np.asarray(value, dtype=np.uint8)
         assert self._validate_legs_self(legs)
         set_gadget_legs(self._data, legs)
 
@@ -588,13 +608,15 @@ class Gadget:
         String representation of the gadget phase, as a fraction of :math:`\pi`.
         """
         phase_frac = self.phase_frac
+        is_approx = Gadget.frac2phase(phase_frac) != self.phase
+        prefix = "~" if is_approx else ""
         num, den = phase_frac.numerator, phase_frac.denominator
         if num == 0:
-            return "0"
+            return f"{prefix}0π"
         num_str = "" if num == 1 else str(num)
         if den == 1:
-            return f"{num_str}π"  # the only case should be 'π'
-        return f"{num_str}π/{str(den)}"
+            return f"{prefix}{num_str}π"  # the only case should be 'π'
+        return f"{prefix}{num_str}π/{str(den)}"
 
     @property
     def is_zero(self) -> bool:
@@ -608,7 +630,7 @@ class Gadget:
 
     def inverse(self) -> Self:
         """
-        Returns the inverse of this gadget, with both phase negated.
+        Returns the inverse of this gadget, with phase negated.
         """
         g = self.clone()
         set_phase(g._data, -g.phase)
@@ -623,18 +645,25 @@ class Gadget:
         assert self._validate_same_num_qubits(other)
         return gadget_overlap(self._data, other._data)
 
-    def commute_with(
+    def commutes_with(self, other: Gadget) -> bool:
+        """
+        Returns whether this gadget commutes with the given gadget,
+        i.e. whether the overlap is even.
+        """
+        return not self.overlap(other) % 2
+
+    def commute_past(
         self, other: Gadget, code: CommutationCode
     ) -> tuple[Gadget, Gadget, Gadget | None]:
         """
-        Commutes this gadget with the other given gadget, using the given
+        Commutes this gadget past the given gadget, using the given
         :obj:`CommutationCode` to determine how the gadgets are to be commuted.
 
         If ``code=0``, the gadgets are not commuted:
 
         ..code-block:: python
 
-            p.commute_with(q, 0) # -> (p, q, None)
+            p.commute_past(q, 0) # -> (p, q, None)
 
         If the gadgets have even overlap, commutation always swaps them, regardless of
         the commutation code:
@@ -642,7 +671,7 @@ class Gadget:
         ..code-block:: python
 
             # p.overlap(q) % 2 == 0
-            p.commute_with(q, code) # -> (q, p, None)
+            p.commute_past(q, code) # -> (q, p, None)
 
         If the gadgets have odd overlap, commutation codes 1-7 correspond to the six
         possible ways to commute them, each resulting in a gadget triple:
@@ -651,7 +680,7 @@ class Gadget:
 
             # p.overlap(q) % 2 != 0
             # code in range(1, 8)
-            p.commute_with(q, code) # -> (r, s, t)
+            p.commute_past(q, code) # -> (r, s, t)
 
         The following mathematical procedure is used to compute the triple ``(r, s, t)``
         of gadgets obtained by commuting ``(p, q)``.
@@ -702,7 +731,7 @@ class Gadget:
             Gadget(row[2 * n :], num_qubits),
         )
 
-    def unitary(self, *, _normalise_phase: bool = True) -> Complex128Array2D:
+    def unitary(self, *, normalize_phase: bool = True) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget."""
         legs = self.legs
         if len(legs) == 0:
@@ -711,20 +740,20 @@ class Gadget:
         for leg in legs[1:]:
             kron_prod = np.kron(kron_prod, PAULI_MATS[leg])
         res: Complex128Array2D = expm(-0.5j * self.phase * kron_prod)
-        if _normalise_phase:
+        if normalize_phase:
             normalise_phase(res)
         return res
 
     def statevec(
-        self, input: Complex128Array1D, _normalise_phase: bool = False
+        self, input: ComplexArray1D | FloatArray1D, normalize_phase: bool = False
     ) -> Complex128Array1D:
         """
         Computes the statevector resulting from the application of this gadget
         to the given input statevector.
         """
-        assert validate(input, Complex128Array1D)
-        res = self.unitary(_normalise_phase=False) @ input
-        if _normalise_phase:
+        assert validate(input, ComplexArray1D | FloatArray1D)
+        res = self.unitary(normalize_phase=False) @ input.astype(np.complex128)
+        if normalize_phase:
             normalise_phase(res)
         return res
 
@@ -742,10 +771,11 @@ class Gadget:
         )
 
     def __repr__(self) -> str:
+
         legs_str = self.leg_paulistr
         if len(legs_str) > 16:
             legs_str = legs_str[:8] + "..." + legs_str[-8:]
-        return f"<Gadget: {legs_str}, {self.phase:.15f}>"
+        return f"<Gadget: {legs_str}, {self.phase_str}>"
 
     def __sizeof__(self) -> int:
         return (

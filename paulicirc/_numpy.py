@@ -37,6 +37,9 @@ UInt8Array2D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.uint8]]
 FloatArray1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.floating[Any]]]
 """Type alias for 1D float NumPy arrays."""
 
+ComplexArray1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.complexfloating[Any]]]
+"""Type alias for 1D complex128 NumPy arrays."""
+
 Complex128Array1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.complex128]]
 """Type alias for 1D complex128 NumPy arrays."""
 

@@ -156,7 +156,7 @@ class CircuitBuilderBase(ABC):
         """Returns the unitary matrix associated to the circuit being built."""
         res = np.eye(2**self.num_qubits, dtype=np.complex128)
         for gadget in self:
-            res = gadget.unitary(_normalise_phase=False) @ res
+            res = gadget.unitary(normalize_phase=False) @ res
         if _normalise_phase:
             normalise_phase(res)
         return res
@@ -171,7 +171,7 @@ class CircuitBuilderBase(ABC):
         assert validate(input, Complex128Array1D)
         res = input
         for gadget in self:
-            res = gadget.unitary(_normalise_phase=False) @ res
+            res = gadget.unitary(normalize_phase=False) @ res
         if _normalise_phase:
             normalise_phase(res)
         return res

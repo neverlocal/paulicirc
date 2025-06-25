@@ -281,7 +281,7 @@ def test_gadget_unitary(
 ) -> None:
     paulistr = "".join(PAULI_CHARS[leg] for leg in legs)
     g = Gadget.from_paulistr(paulistr, phase)
-    u = g.unitary(_normalise_phase=_normalise_phase)
+    u = g.unitary(normalize_phase=_normalise_phase)
     gs = [Gadget.from_paulistr(paulistr, i * phase) for i in range(5)]
     v = np.eye(2**num_qubits, dtype=np.complex128)
     for i, g_i in enumerate(gs):

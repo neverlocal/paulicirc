@@ -68,7 +68,7 @@ CommutationCodeArray: TypeAlias = UInt8Array1D
 """
 A 1D array of commutation codes, used by :meth:`Circuit.commute`.
 
-See :class:`Gadget.commute_with` for a description of the commutation procedure
+See :class:`Gadget.commute_past` for a description of the commutation procedure
 and associated commutation code conventions.
 """
 
@@ -107,7 +107,7 @@ def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     Commutes subsequent gadget pairs in the circuit according to the given codes.
     Expects the number of codes to be ``m//2``, where ``m`` is the number of gadgets.
 
-    See :class:`Gadget.commute_with` for a description of the commutation procedure
+    See :class:`Gadget.commute_past` for a description of the commutation procedure
     and associated commutation code conventions.
     """
     m, _n = circ.shape
@@ -245,7 +245,7 @@ class Circuit:
         If ``non_zero`` is set to :obj:`True`, commutation codes are all non-zero,
         forcing commutation for all pairs.
 
-        See :class:`Gadget.commute_with` for a description of the commutation procedure
+        See :class:`Gadget.commute_past` for a description of the commutation procedure
         and associated commutation code conventions.
         """
         if not isinstance(rng, RNG):
@@ -257,7 +257,7 @@ class Circuit:
         Commutes adjacent gadget pairs in the circuit according to the given commutation
         codes.
 
-        See :class:`Gadget.commute_with` for a description of the commutation procedure
+        See :class:`Gadget.commute_past` for a description of the commutation procedure
         and associated commutation code conventions.
         """
         codes = np.asarray(codes, dtype=np.uint8)
@@ -273,7 +273,7 @@ class Circuit:
         Commutes adjacent gadget pairs in the circuit according to randomly sampled
         commutation codes.
 
-        See :class:`Gadget.commute_with` for a description of the commutation procedure
+        See :class:`Gadget.commute_past` for a description of the commutation procedure
         and associated commutation code conventions.
         """
         if len(self) == 0:
@@ -284,7 +284,7 @@ class Circuit:
     def unitary(
         self,
         *,
-        _normalise_phase: bool = True,
+        normalize_phase: bool = True,
         _use_cupy: bool = False,  # currently in alpha
     ) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget circuit."""
@@ -294,20 +294,20 @@ class Circuit:
 
             res = cp.asarray(res)
         for gadget in self:
-            gadget_u = gadget.unitary(_normalise_phase=False)
+            gadget_u = gadget.unitary(normalize_phase=False)
             if _use_cupy:
                 gadget_u = cp.asarray(res)
             res = gadget_u @ res
         if _use_cupy:
             res = cp.asnumpy(res).astype(np.complex128)
-        if _normalise_phase:
+        if normalize_phase:
             normalise_phase(res)
         return res
 
     def statevec(
         self,
         input: Complex128Array1D,
-        _normalise_phase: bool = True,
+        normalize_phase: bool = True,
         _use_cupy: bool = False,  # currently in alpha
     ) -> Complex128Array1D:
         """
@@ -321,11 +321,11 @@ class Circuit:
 
             res = cp.asarray(res)
         for gadget in self:
-            gadget_u = gadget.unitary(_normalise_phase=False)
+            gadget_u = gadget.unitary(normalize_phase=False)
             if _use_cupy:
                 gadget_u = cp.asarray(res)
             res = gadget_u @ res
-        if _normalise_phase:
+        if normalize_phase:
             normalise_phase(res)
         return res
 

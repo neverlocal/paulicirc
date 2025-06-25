@@ -489,7 +489,13 @@ def test_building_from_circuit(num_qubits: int, num_gadgets: int, seed: int) -> 
     builder = CircuitBuilder(num_qubits)
     circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
     for g in circ:
-        builder.add_gadget(g.phase, g.legs)
+        builder.append(g)
+    assert np.allclose(builder.unitary(), circ.unitary())
+    builder = CircuitBuilder(num_qubits)
+    builder.extend(circ)
+    assert np.allclose(builder.unitary(), circ.unitary())
+    builder = CircuitBuilder(num_qubits)
+    builder.extend(list(circ))
     assert np.allclose(builder.unitary(), circ.unitary())
 
 
@@ -511,5 +517,8 @@ def test_building_from_circuit_layered(
     builder = LayeredCircuitBuilder(num_qubits)
     circ = Circuit.random(num_gadgets, num_qubits, rng=seed)
     for g in circ:
-        builder.add_gadget(g.phase, g.legs)
+        builder.append(g)
+    assert np.allclose(builder.unitary(), circ.unitary())
+    builder = LayeredCircuitBuilder(num_qubits)
+    builder.extend(circ)
     assert np.allclose(builder.unitary(), circ.unitary())

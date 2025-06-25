@@ -29,15 +29,14 @@
             "PhaseDataArray",
             "PhaseArray",
             "CommutationCode",
-            "_GadgetDataTriple"
+            "_GadgetDataTriple",
+            "QubitIdx",
+            "QubitIdxs",
+            "PhaseLike"
         ],
         "paulicirc.circuits": [
             "CircuitData",
             "CommutationCodeArray"
-        ],
-        "paulicirc.builders": [
-            "PhaseLike",
-            "QubitIdx"
         ]
     },
     "exclude_members": {},

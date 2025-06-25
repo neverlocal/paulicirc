@@ -24,20 +24,3 @@ LayeredCircuitBuilder
 .. autoclass:: paulicirc.builders.LayeredCircuitBuilder
     :show-inheritance:
     :members:
-
-PHASE_NBYTES
-------------
-
-.. autodata:: paulicirc.builders.PHASE_NBYTES
-
-PhaseLike
----------
-
-.. autodata:: paulicirc.builders.PhaseLike
-
-QubitIdx
---------
-
-.. autoclass:: paulicirc.builders.QubitIdx
-    :show-inheritance:
-    :members:

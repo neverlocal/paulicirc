@@ -77,6 +77,23 @@ PhaseDataArray
 
 .. autodata:: paulicirc.gadgets.PhaseDataArray
 
+PhaseLike
+---------
+
+.. autodata:: paulicirc.gadgets.PhaseLike
+
+QubitIdx
+--------
+
+.. autoclass:: paulicirc.gadgets.QubitIdx
+    :show-inheritance:
+    :members:
+
+QubitIdxs
+---------
+
+.. autodata:: paulicirc.gadgets.QubitIdxs
+
 _GadgetDataTriple
 -----------------
 
@@ -91,6 +108,11 @@ are_same_phase
 --------------
 
 .. autodata:: paulicirc.gadgets.are_same_phase
+
+broadcast_idxs
+--------------
+
+.. autofunction:: paulicirc.gadgets.broadcast_idxs
 
 decode_phases
 -------------

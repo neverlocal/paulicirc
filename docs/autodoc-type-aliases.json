@@ -16,8 +16,9 @@
     "PhaseArray": "paulicirc.gadgets.PhaseArray",
     "CommutationCode": "paulicirc.gadgets.CommutationCode",
     "_GadgetDataTriple": "paulicirc.gadgets._GadgetDataTriple",
+    "QubitIdx": "paulicirc.gadgets.QubitIdx",
+    "QubitIdxs": "paulicirc.gadgets.QubitIdxs",
+    "PhaseLike": "paulicirc.gadgets.PhaseLike",
     "CircuitData": "paulicirc.circuits.CircuitData",
-    "CommutationCodeArray": "paulicirc.circuits.CommutationCodeArray",
-    "PhaseLike": "paulicirc.builders.PhaseLike",
-    "QubitIdx": "paulicirc.builders.QubitIdx"
+    "CommutationCodeArray": "paulicirc.circuits.CommutationCodeArray"
 }

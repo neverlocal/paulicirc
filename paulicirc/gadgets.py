@@ -16,11 +16,13 @@
 from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from fractions import Fraction
+from math import lcm
 import re
 from typing import (
     Any,
     Final,
     Literal,
+    Protocol,
     Self,
     Sequence,
     SupportsIndex,
@@ -114,6 +116,41 @@ as a 2D UInt8 NumPy array of shape ``(n, PHASE_NBYTES)``.
 
 PhaseArray: TypeAlias = FloatArray1D
 """Type alias for a 1D array of phases."""
+
+QubitIdx: TypeAlias = int
+"""Type alias for the index of a qubit."""
+
+QubitIdxs: TypeAlias = Sequence[QubitIdx]
+"""Type alias for a sequence of indexes of qubits."""
+
+
+def broadcast_idxs(*idxs_seq: QubitIdx | QubitIdxs) -> tuple[QubitIdxs, ...]:
+    """
+    Broadcasts any number of sequences of qubit indexes to a common length,
+    defined as the least common multiple of lengths for index sequences.
+    Individual qubit indexes passed to this function are considered the same
+    as singleton index sequences.
+    If any sequence is empty, the returned sequences are all empty.
+    """
+    if not idxs_seq:
+        return ()
+    _idxs_seq: tuple[tuple[QubitIdx, ...], ...] = tuple(
+        (idxs,) if isinstance(idxs, QubitIdx) else tuple(idxs) for idxs in idxs_seq
+    )
+    if any(not idxs for idxs in _idxs_seq):
+        return ((),) * len(_idxs_seq)
+    n = lcm(*map(len, _idxs_seq))
+    return tuple(idxs * (n // len(idxs)) for idxs in _idxs_seq)
+
+
+PhaseLike: TypeAlias = Phase | Fraction
+r"""
+Type alias for values which can be used to specify a phase:
+
+- as a floating point value in :math:`[0, 2\pi)`, see :obj:`Phase`
+- as a fraction of :math:`\pi`
+
+"""
 
 
 def gadget_data_len(num_qubits: int) -> int:
@@ -394,12 +431,15 @@ class Gadget:
         return (float(frac) * np.pi) % (2 * np.pi)
 
     @staticmethod
-    def assemble_data(legs: PauliArray, phase: Phase) -> GadgetData:
+    def assemble_data(legs: PauliArray, phase: PhaseLike) -> GadgetData:
         """Assembles gadget data from the given legs and phase."""
         assert Gadget._validate_legs(legs)
         g = zero_gadget_data(len(legs))
         set_gadget_legs(g, legs)
-        set_phase(g, phase)
+        if isinstance(phase, Fraction):
+            set_phase(g, Gadget.frac2phase(phase))
+        else:
+            set_phase(g, phase)
         return g
 
     @classmethod
@@ -409,7 +449,7 @@ class Gadget:
         return cls(data, num_qubits)
 
     @classmethod
-    def from_legs(cls, legs: PauliArray, phase: Phase) -> Self:
+    def from_legs(cls, legs: PauliArray, phase: PhaseLike) -> Self:
         """Returns the gadget with given legs and phase."""
         assert Gadget._validate_legs(legs)
         num_qubits = len(legs)
@@ -417,11 +457,29 @@ class Gadget:
         return cls(data, num_qubits)
 
     @classmethod
-    def from_paulistr(cls, paulistr: str, phase: Phase) -> Self:
+    def from_paulistr(cls, paulistr: str, phase: PhaseLike) -> Self:
         """Returns the gadget with given legs (as paulistr) and phase."""
         assert Gadget._validate_paulistr(paulistr)
         num_qubits = len(paulistr)
         legs = np.fromiter((PAULI_CHARS.index(p) for p in paulistr), dtype=np.uint8)
+        data = Gadget.assemble_data(legs, phase)
+        return cls(data, num_qubits)
+
+    @classmethod
+    def from_sparse_paulistr(
+        cls,
+        paulistr: str,
+        qubits: QubitIdx | QubitIdxs,
+        num_qubits: int,
+        phase: PhaseLike,
+    ) -> Self:
+        """Returns the gadget with given legs (as a sparse paulistr) and phase."""
+        if isinstance(qubits, QubitIdx):
+            qubits = (qubits,)
+        assert Gadget._validate_sparse_paulistr(paulistr, qubits, num_qubits)
+        legs = np.zeros(num_qubits, dtype=np.uint8)
+        for idx, p in zip(qubits, paulistr):
+            legs[idx] = PAULI_CHARS.index(p)
         data = Gadget.assemble_data(legs, phase)
         return cls(data, num_qubits)
 
@@ -708,6 +766,26 @@ class Gadget:
             return True
 
         @staticmethod
+        def _validate_sparse_paulistr(
+            paulistr: str, qubits: QubitIdxs, num_qubits: int
+        ) -> Literal[True]:
+            """Validates a given Paulistring."""
+            Gadget._validate_paulistr(paulistr)
+            validate(qubits, QubitIdxs)
+            validate(num_qubits, int)
+            if num_qubits < 0:
+                raise ValueError("Number of qubits must be non-negative.")
+            if not all(0 <= q < num_qubits for q in qubits):
+                raise ValueError("Invalid qubit indices.")
+            if len(qubits) != len(set(qubits)):
+                raise ValueError("Qubit indices cannot be repeated.")
+            if len(qubits) != len(paulistr):
+                raise ValueError(
+                    "Paulistring length must match the number of specified qubit idxs."
+                )
+            return True
+
+        @staticmethod
         def _validate_new_args(
             data: GadgetData, num_qubits: int | None
         ) -> Literal[True]:
@@ -841,14 +919,30 @@ class Layer:
             raise ValueError("Selected legs are incompatible with layer.")
         return self._phases.get(Layer._selected_legs_to_subset(legs), 0)
 
-    def is_compatible_with(self, legs: PauliArray) -> bool:
+    @overload
+    def is_compatible_with(self, legs: PauliArray, /) -> bool: ...
+
+    @overload
+    def is_compatible_with(self, gadget: Gadget, /) -> bool: ...
+
+    def is_compatible_with(self, legs: PauliArray | Gadget, /) -> bool:
         """Check if the legs are compatible with the current layer."""
+        if isinstance(legs, Gadget):
+            legs = legs.legs
         assert self._validate_legs_self(legs)
         self_legs = self._legs
         return bool(np.all((self_legs == legs) | (self_legs == 0) | (legs == 0)))
 
-    def commutes_with(self, legs: PauliArray) -> bool:
+    @overload
+    def commutes_with(self, legs: PauliArray, /) -> bool: ...
+
+    @overload
+    def commutes_with(self, gadget: Gadget, /) -> bool: ...
+
+    def commutes_with(self, legs: PauliArray | Gadget, /) -> bool:
         """Check if the legs commute with the current layer."""
+        if isinstance(legs, Gadget):
+            legs = legs.legs
         assert self._validate_legs_self(legs)
         self_legs = self._legs
         for subset in self._phases:

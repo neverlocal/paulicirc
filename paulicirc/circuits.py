@@ -215,6 +215,11 @@ class Circuit:
         assert self._validate_phases_value(value)
         self._data[:, -PHASE_NBYTES:] = encode_phases(value)
 
+    @property
+    def is_zero(self) -> bool:
+        """Whether the circuit is all zero (legs set to '_', phases set to 0)."""
+        return not np.any(self._data)
+
     def clone(self) -> Self:
         """Creates a copy of the gadget circuit."""
         return Circuit(self._data.copy(), self._num_qubits)

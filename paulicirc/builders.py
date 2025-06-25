@@ -17,22 +17,27 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Sequence
 from fractions import Fraction
+from math import ceil
 from typing import (
-    Any,
     Literal,
     Self,
     SupportsIndex,
     TypeAlias,
-    overload,
     override,
-    reveal_type,
 )
 
 import numpy as np
 
 from ._numpy import RNG, Complex128Array1D, Complex128Array2D, normalise_phase
-from .gadgets import PHASE_NBYTES, Gadget, Layer, PauliArray, Phase
-from .circuits import Circuit, CircuitData
+from .gadgets import (
+    Gadget,
+    Layer,
+    Phase,
+    QubitIdx,
+    QubitIdxs,
+    broadcast_idxs,
+)
+from .circuits import Circuit
 
 if __debug__:
     from typing_validation import validate
@@ -45,9 +50,6 @@ Type alias for values which can be used to specify a phase:
 - as a fraction of :math:`\pi`
 
 """
-
-QubitIdx: TypeAlias = int
-"""Type alias for the index of a qubit in a circuit."""
 
 
 class CircuitBuilderBase(ABC):
@@ -66,7 +68,7 @@ class CircuitBuilderBase(ABC):
 
         :meta public:
         """
-        assert CircuitBuilderBase._validate_new_args(num_qubits)
+        assert CircuitBuilderBase.__validate_new_args(num_qubits)
         self = super().__new__(cls)
         self._num_qubits = num_qubits
         return self
@@ -76,56 +78,67 @@ class CircuitBuilderBase(ABC):
         """Number of qubits for the circuit."""
         return self._num_qubits
 
-    @overload
-    def add_gadget(
-        self,
-        phase: PhaseLike,
-        legs: PauliArray,
-        qubits: None = None,
-    ) -> int: ...
+    # @overload
+    # def add_gadget(
+    #     self,
+    #     phase: PhaseLike,
+    #     legs: PauliArray,
+    #     qubits: None = None,
+    # ) -> None: ...
 
-    @overload
-    def add_gadget(
-        self,
-        phase: PhaseLike,
-        legs: str,
-        qubits: QubitIdx | Sequence[QubitIdx] | None = None,
-    ) -> int: ...
+    # @overload
+    # def add_gadget(
+    #     self,
+    #     phase: PhaseLike,
+    #     legs: str,
+    #     qubits: QubitIdx | Sequence[QubitIdx] | None = None,
+    # ) -> None: ...
 
-    def add_gadget(
-        self,
-        phase: PhaseLike,
-        legs: PauliArray | str,
-        qubits: QubitIdx | Sequence[QubitIdx] | None = None,
-    ) -> int:
-        """
-        Add a gadget to the circuit.
+    # def add_gadget(
+    #     self,
+    #     phase: PhaseLike,
+    #     legs: PauliArray | str,
+    #     qubits: QubitIdx | Sequence[QubitIdx] | None = None,
+    # ) -> None:
+    #     """
+    #     Add a gadget to the circuit.
 
-        Returns the index of the layer to which the gadget was appended.
-        """
-        n = self._num_qubits
-        if isinstance(phase, Phase):
-            phase %= 2 * np.pi
-        else:
-            assert validate(phase, Fraction)
-            phase = Gadget.frac2phase(phase)
-        if isinstance(legs, str):
-            paulis: str = legs
-            PAULI_CHARS = "_XZY"
-            if qubits is None:
-                assert self._validate_gadget_args(legs, qubits)
-                legs = np.fromiter(map(PAULI_CHARS.index, paulis), dtype=np.uint8)
-            else:
-                if isinstance(qubits, QubitIdx):
-                    qubits = (qubits,)
-                assert self._validate_gadget_args(legs, qubits)
-                legs = np.zeros(n, dtype=np.uint8)
-                for p, q in zip(paulis, qubits, strict=True):
-                    legs[q] = PAULI_CHARS.index(p)
-        return self._add_gadget(phase, legs)
+    #     Returns the index of the layer to which the gadget was appended.
+    #     """
+    #     n = self._num_qubits
+    #     if isinstance(phase, Phase):
+    #         phase %= 2 * np.pi
+    #     else:
+    #         assert validate(phase, Fraction)
+    #         phase = Gadget.frac2phase(phase)
+    #     if isinstance(legs, str):
+    #         paulis: str = legs
+    #         PAULI_CHARS = "_XZY"
+    #         if qubits is None:
+    #             assert self._validate_gadget_args(legs, qubits)
+    #             legs = np.fromiter(map(PAULI_CHARS.index, paulis), dtype=np.uint8)
+    #         else:
+    #             if isinstance(qubits, QubitIdx):
+    #                 qubits = (qubits,)
+    #             assert self._validate_gadget_args(legs, qubits)
+    #             legs = np.zeros(n, dtype=np.uint8)
+    #             for p, q in zip(paulis, qubits, strict=True):
+    #                 legs[q] = PAULI_CHARS.index(p)
+    #     self._add_gadget(phase, legs)
 
     @abstractmethod
-    def _add_gadget(self, phase: float, legs: PauliArray) -> int: ...
+    def append(self, gadget: Gadget) -> None:
+        """Appends a single gadget to the circuit being built."""
+        ...
+
+    @abstractmethod
+    def extend(self, gadgets: Sequence[Gadget] | Circuit) -> None:
+        """
+        Appends the given gadgets to the circuit being built.
+        Gadgets are all validated prior to any modification,
+        so either they are all appended to the circuit or none is.
+        """
+        ...
 
     @abstractmethod
     def __iter__(self) -> Iterator[Gadget]:
@@ -163,146 +176,201 @@ class CircuitBuilderBase(ABC):
             normalise_phase(res)
         return res
 
-    def rz(self, angle: PhaseLike, q: QubitIdx) -> None:
-        """Adds a Z rotation on the given qubit."""
-        self.add_gadget(angle, "Z", q)
+    def gadget(
+        self, paulistr: str, qubits: QubitIdx | QubitIdxs, angle: PhaseLike
+    ) -> None:
+        """Adds a gadget with given Paulistring and angle on given qubits."""
+        gadget = Gadget.from_sparse_paulistr(paulistr, qubits, self.num_qubits, angle)
+        self.append(gadget)
 
-    def rx(self, angle: PhaseLike, q: QubitIdx) -> None:
-        """Adds a Z rotation on the given qubit."""
-        self.add_gadget(angle, "X", q)
+    def rz(self, angle: PhaseLike, q: QubitIdx | QubitIdxs) -> None:
+        """Adds a Z rotation with given angle on the given qubit(s)."""
+        (qs,) = broadcast_idxs(q)
+        for q in qs:
+            self.gadget("Z", q, angle)
 
-    def ry(self, angle: PhaseLike, q: QubitIdx) -> None:
-        """Adds a Y rotation on the given qubit."""
-        self.add_gadget(angle, "Y", q)
+    def rx(self, angle: PhaseLike, q: QubitIdx | QubitIdxs) -> None:
+        """Adds an X rotation with given angle on the given qubit(s)."""
+        (qs,) = broadcast_idxs(q)
+        for q in qs:
+            self.gadget("X", q, angle)
 
-    def z(self, q: QubitIdx) -> None:
+    def ry(self, angle: PhaseLike, q: QubitIdx | QubitIdxs) -> None:
+        """Adds a Y rotation with given angle on the given qubit(s)."""
+        (qs,) = broadcast_idxs(q)
+        for q in qs:
+            self.gadget("Y", q, angle)
+
+    def z(self, q: QubitIdx | QubitIdxs) -> None:
         """Adds a Z gate on the given qubit."""
         self.rz(Fraction(1, 1), q)
 
-    def x(self, q: QubitIdx) -> None:
+    def x(self, q: QubitIdx | QubitIdxs) -> None:
         """Adds a X gate on the given qubit."""
         self.rx(Fraction(1, 1), q)
 
-    def y(self, q: QubitIdx) -> None:
+    def y(self, q: QubitIdx | QubitIdxs) -> None:
         """Adds a Y gate on the given qubit."""
         self.ry(Fraction(1, 1), q)
 
-    def sx(self, q: QubitIdx) -> None:
+    def sx(self, q: QubitIdx | QubitIdxs) -> None:
         """Adds a √X gate on the given qubit."""
         self.rx(Fraction(1, 2), q)
 
-    def sxdg(self, q: QubitIdx) -> None:
+    def sxdg(self, q: QubitIdx | QubitIdxs) -> None:
         """Adds a √X† gate on the given qubit."""
         self.rx(Fraction(-1, 2), q)
 
-    def s(self, q: QubitIdx) -> None:
+    def s(self, q: QubitIdx | QubitIdxs) -> None:
         """Adds a S gate on the given qubit."""
         self.rz(Fraction(1, 2), q)
 
-    def sdg(self, q: QubitIdx) -> None:
+    def sdg(self, q: QubitIdx | QubitIdxs) -> None:
         """Adds a S† gate on the given qubit."""
         self.rz(Fraction(-1, 2), q)
 
-    def t(self, q: QubitIdx) -> None:
+    def t(self, q: QubitIdx | QubitIdxs) -> None:
         """Adds a T gate on the given qubit."""
         self.rz(Fraction(1, 4), q)
 
-    def tdg(self, q: QubitIdx) -> None:
+    def tdg(self, q: QubitIdx | QubitIdxs) -> None:
         """Adds a T† gate on the given qubit."""
         self.rz(Fraction(-1, 4), q)
 
-    def h(self, q: QubitIdx, *, xzx: bool = False) -> None:
+    def h(self, q: QubitIdx | QubitIdxs, *, xzx: bool = False) -> None:
         """
         Adds a H gate on the given qubit.
 
         By default, this is decomposed as ``Z(pi/2)X(pi/2)Z(pi/2)``,
         but setting ``xzx=True`` decomposes it as ``X(pi/2)Z(pi/2)X(pi/2)`` instead.
         """
+        (qs,) = broadcast_idxs(q)
         if xzx:
-            self.sx(q)
-            self.s(q)
-            self.sx(q)
+            for q in qs:
+                self.sx(q)
+                self.s(q)
+                self.sx(q)
         else:
-            self.s(q)
-            self.sx(q)
-            self.s(q)
+            for q in qs:
+                self.s(q)
+                self.sx(q)
+                self.s(q)
 
-    def hdg(self, q: QubitIdx, *, xzx: bool = False) -> None:
+    def hdg(self, q: QubitIdx | QubitIdxs, *, xzx: bool = False) -> None:
         """
         Adds a H gate on the given qubit.
 
         By default, this is decomposed as ``Z(-pi/2)X(-pi/2)Z(-pi/2)``,
         but setting ``xzx=True`` decomposes it as ``X(-pi/2)Z(-pi/2)X(-pi/2)`` instead.
         """
+        (qs,) = broadcast_idxs(q)
         if xzx:
-            self.sxdg(q)
-            self.sdg(q)
-            self.sxdg(q)
+            for q in qs:
+                self.sxdg(q)
+                self.sdg(q)
+                self.sxdg(q)
         else:
-            self.sdg(q)
-            self.sxdg(q)
-            self.sdg(q)
+            for q in qs:
+                self.sdg(q)
+                self.sxdg(q)
+                self.sdg(q)
 
-    def cz(self, c: QubitIdx, t: QubitIdx) -> None:
+    def cz(self, c: QubitIdx | QubitIdxs, t: QubitIdx | QubitIdxs) -> None:
         """Adds a CZ gate to the given control and target qubits."""
-        self.sdg(c)
-        self.sdg(t)
-        self.add_gadget(Fraction(1, 2), "ZZ", (c, t))
+        cs, ts = broadcast_idxs(c, t)
+        for c, t in zip(cs, ts):
+            self.sdg(c)
+            self.sdg(t)
+            self.gadget("ZZ", (c, t), Fraction(1, 2))
 
-    def cx(self, c: QubitIdx, t: QubitIdx) -> None:
+    def cx(self, c: QubitIdx | QubitIdxs, t: QubitIdx | QubitIdxs) -> None:
         """Adds a CX gate to the given control and target qubits."""
-        self.s(t)
-        self.sx(t)
-        self.cz(c, t)
-        self.sxdg(t)
-        self.sdg(t)
+        cs, ts = broadcast_idxs(c, t)
+        for c, t in zip(cs, ts):
+            self.s(t)
+            self.sx(t)
+            self.cz(c, t)
+            self.sxdg(t)
+            self.sdg(t)
 
-    def cy(self, c: QubitIdx, t: QubitIdx) -> None:
+    def cy(self, c: QubitIdx | QubitIdxs, t: QubitIdx | QubitIdxs) -> None:
         """Adds a CY gate to the given control and target qubits."""
-        self.sx(t)
-        self.cz(c, t)
-        self.sxdg(t)
+        cs, ts = broadcast_idxs(c, t)
+        for c, t in zip(cs, ts):
+            self.sx(t)
+            self.cz(c, t)
+            self.sxdg(t)
 
-    def swap(self, c: QubitIdx, t: QubitIdx) -> None:
+    def swap(self, c: QubitIdx | QubitIdxs, t: QubitIdx | QubitIdxs) -> None:
         """Adds a SWAP gate to the given control and target qubits."""
-        self.cx(c, t)
-        self.cx(t, c)
-        self.cx(c, t)
+        cs, ts = broadcast_idxs(c, t)
+        for c, t in zip(cs, ts):
+            self.cx(c, t)
+            self.cx(t, c)
+            self.cx(c, t)
 
-    def ccx(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
+    def ccx(
+        self,
+        c0: QubitIdx | QubitIdxs,
+        c1: QubitIdx | QubitIdxs,
+        t: QubitIdx | QubitIdxs,
+    ) -> None:
         """Adds a CCX gate to the given control and target qubits."""
-        self.s(t)
-        self.sx(t)
-        self.ccz(c0, c1, t)
-        self.sxdg(t)
-        self.sdg(t)
+        c0s, c1s, ts = broadcast_idxs(c0, c1, t)
+        for c0, c1, t in zip(c0s, c1s, ts):
+            self.s(t)
+            self.sx(t)
+            self.ccz(c0, c1, t)
+            self.sxdg(t)
+            self.sdg(t)
 
-    def ccz(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
+    def ccz(
+        self,
+        c0: QubitIdx | QubitIdxs,
+        c1: QubitIdx | QubitIdxs,
+        t: QubitIdx | QubitIdxs,
+    ) -> None:
         """Adds a CCZ gate to the given control and target qubits."""
-        self.add_gadget(Fraction(1, 4), "Z__", (c0, c1, t))
-        self.add_gadget(Fraction(1, 4), "_Z_", (c0, c1, t))
-        self.add_gadget(Fraction(1, 4), "__Z", (c0, c1, t))
-        self.add_gadget(Fraction(-1, 4), "ZZ_", (c0, c1, t))
-        self.add_gadget(Fraction(-1, 4), "Z_Z", (c0, c1, t))
-        self.add_gadget(Fraction(-1, 4), "_ZZ", (c0, c1, t))
-        self.add_gadget(Fraction(1, 4), "ZZZ", (c0, c1, t))
+        c0s, c1s, ts = broadcast_idxs(c0, c1, t)
+        for c0, c1, t in zip(c0s, c1s, ts):
+            self.gadget("Z__", (c0, c1, t), Fraction(1, 4))
+            self.gadget("_Z_", (c0, c1, t), Fraction(1, 4))
+            self.gadget("__Z", (c0, c1, t), Fraction(1, 4))
+            self.gadget("_ZZ", (c0, c1, t), Fraction(-1, 4))
+            self.gadget("Z_Z", (c0, c1, t), Fraction(-1, 4))
+            self.gadget("ZZ_", (c0, c1, t), Fraction(-1, 4))
+            self.gadget("ZZZ", (c0, c1, t), Fraction(1, 4))
 
-    def ccy(self, c0: QubitIdx, c1: QubitIdx, t: QubitIdx) -> None:
+    def ccy(
+        self,
+        c0: QubitIdx | QubitIdxs,
+        c1: QubitIdx | QubitIdxs,
+        t: QubitIdx | QubitIdxs,
+    ) -> None:
         """Adds a CCY gate to the given control and target qubits."""
-        self.sx(t)
-        self.ccz(c0, c1, t)
-        self.sxdg(t)
+        c0s, c1s, ts = broadcast_idxs(c0, c1, t)
+        for c0, c1, t in zip(c0s, c1s, ts):
+            self.sx(t)
+            self.ccz(c0, c1, t)
+            self.sxdg(t)
 
-    def cswap(self, c: QubitIdx, t0: QubitIdx, t1: QubitIdx) -> None:
+    def cswap(
+        self,
+        c: QubitIdx | QubitIdxs,
+        t0: QubitIdx | QubitIdxs,
+        t1: QubitIdx | QubitIdxs,
+    ) -> None:
         """Adds a CSWAP gate to the given control and target qubits."""
-        self.cx(t1, t0)
-        self.ccx(c, t0, t1)
-        self.cx(t1, t0)
+        cs, t0s, t1s = broadcast_idxs(c, t0, t1)
+        for c, t0, t1 in zip(cs, t0s, t1s):
+            self.cx(t1, t0)
+            self.ccx(c, t0, t1)
+            self.cx(t1, t0)
 
     if __debug__:
 
         @staticmethod
-        def _validate_new_args(num_qubits: int) -> Literal[True]:
+        def __validate_new_args(num_qubits: int) -> Literal[True]:
             """Validate arguments to the :meth:`__new__` method."""
             validate(num_qubits, SupportsIndex)
             num_qubits = int(num_qubits)
@@ -310,33 +378,25 @@ class CircuitBuilderBase(ABC):
                 raise ValueError("Number of qubits must be non-negative.")
             return True
 
-        def _validate_gadget_args(
-            self,
-            legs: PauliArray | str,
-            qubits: Sequence[QubitIdx] | None,
+        def _validate_gadget(self, gadget: Gadget) -> Literal[True]:
+            validate(gadget, Gadget)
+            if gadget.num_qubits != self.num_qubits:
+                raise ValueError(
+                    f"Found {gadget.num_qubits} qubits, expected {self.num_qubits}."
+                )
+            return True
+
+        def _validate_gadgets(
+            self, gadgets: Sequence[Gadget] | Circuit
         ) -> Literal[True]:
-            if qubits is None:
-                if len(legs) != self.num_qubits:
+            validate(gadgets, Sequence[Gadget] | Circuit)
+            num_qubits = self.num_qubits
+            for idx, gadget in enumerate(gadgets):
+                if gadget.num_qubits != num_qubits:
                     raise ValueError(
-                        "If qubits are not explicitly passed, the number of legs must "
-                        "be exactly the number of qubits for the circuit builder."
+                        f"Found {gadget.num_qubits} qubits at {idx = }"
+                        f", expected {num_qubits}."
                     )
-            else:
-                qubit_range = range(self.num_qubits)
-                if not all(q in qubit_range for q in qubits):
-                    raise ValueError(f"Qubit indices must fall in {qubit_range}")
-                if len(legs) != len(qubits):
-                    raise ValueError(
-                        f"Found {len(legs)} legs, expected {len(qubits)} from qubits."
-                    )
-            if isinstance(legs, str):
-                if not all(leg in "_XYZ" for leg in legs):
-                    raise ValueError(
-                        "Leg Pauli chars must be one of '_', 'X', 'Y' or 'Z'."
-                    )
-            else:
-                if not all(0 <= leg_idx < 4 for leg_idx in legs):
-                    raise ValueError("Leg Pauli indices must be in range(4).")
             return True
 
 
@@ -345,26 +405,68 @@ class CircuitBuilder(CircuitBuilderBase):
 
     _circuit: Circuit
     _num_gadgets: int
+    _capacity_scaling: int | float
 
-    __slots__ = ("_circuit", "_num_gadgets")
+    __slots__ = ("_circuit", "_num_gadgets", "_capacity_scaling")
 
-    def __new__(cls, num_qubits: int, *, init_capacity: int = 16) -> Self:
+    def __new__(
+        cls,
+        num_qubits: int,
+        *,
+        init_capacity: int = 16,
+        capacity_scaling: int | float = 2,
+    ) -> Self:
         self = super().__new__(cls, num_qubits)
+        assert CircuitBuilder.__validate_new_args(init_capacity, capacity_scaling)
         self._circuit = Circuit.zero(init_capacity, num_qubits)
         self._num_gadgets = 0
+        self._capacity_scaling = capacity_scaling
         return self
 
-    def _add_gadget(self, phase: float, legs: PauliArray) -> int:
-        idx = self._num_gadgets
-        circuit = self._circuit
-        gadget_data = Gadget.assemble_data(legs, phase)
-        circuit._data[idx] = gadget_data
+    @property
+    def capacity(self) -> int:
+        return len(self._circuit)
+
+    def append(self, gadget: Gadget) -> None:
+        if len(self) >= self.capacity:
+            self._scale_up_capacity(1)
+        self._circuit[len(self)] = gadget
         self._num_gadgets += 1
-        if idx + 1 == (capacity := len(circuit)):
-            ext_circuit = Circuit.zero(2 * capacity, self.num_qubits)
-            ext_circuit[:capacity] = circuit
-            self._circuit = ext_circuit
-        return idx
+
+    def extend(self, gadgets: Sequence[Gadget] | Circuit) -> None:
+        if isinstance(gadgets, Circuit):
+            new_circuit = gadgets
+        else:
+            new_circuit = Circuit.from_gadgets(gadgets, self.num_qubits)
+        num_gadgets = len(self)
+        num_new_gadgets = len(new_circuit)
+        if num_gadgets + num_new_gadgets > self.capacity:
+            self._scale_up_capacity(num_new_gadgets)
+        self._circuit[num_gadgets : num_gadgets + num_new_gadgets] = new_circuit
+        self._num_gadgets += num_new_gadgets
+
+    def _scale_up_capacity(self, num_new_gadgets: int) -> None:
+        capacity = len(self._circuit) * 1.0
+        capacity_scaling = self._capacity_scaling
+        target_capacity = len(self) + num_new_gadgets
+        while capacity < target_capacity:
+            capacity *= capacity_scaling
+        self.set_capacity(int(ceil(capacity)))
+
+    def set_capacity(self, new_capacity: int) -> None:
+        """Sets the circuit capacity to the given value."""
+        assert self._validate_capacity(new_capacity)
+        circuit = self._circuit
+        capacity = len(circuit)
+        if new_capacity == capacity:
+            return
+        ext_circuit = Circuit.zero(new_capacity, self.num_qubits)
+        ext_circuit[:capacity] = circuit
+        self._circuit = ext_circuit
+
+    def trim_capacity(self) -> None:
+        """Sets the circuit capacity to the minimum amount possible."""
+        self.set_capacity(max(1, len(self)))
 
     @override
     def circuit(self) -> Circuit:
@@ -387,6 +489,27 @@ class CircuitBuilder(CircuitBuilderBase):
             + self._num_gadgets.__sizeof__()
             + self._circuit.__sizeof__()
         )
+
+    if __debug__:
+
+        @staticmethod
+        def __validate_new_args(
+            init_capacity: int, capacity_scaling: int | float
+        ) -> Literal[True]:
+            validate(init_capacity, int)
+            validate(capacity_scaling, int | float)
+            if init_capacity <= 0:
+                raise ValueError("Circuit capacity must be >= 1.")
+            if capacity_scaling <= 1.0:
+                raise ValueError("Circuit capacity scalling must be > 1.")
+            return True
+
+        def _validate_capacity(self, new_capacity: int) -> Literal[True]:
+            if new_capacity <= 0:
+                raise ValueError("Circuit capacity must be >= 1.")
+            if new_capacity < self._num_gadgets:
+                raise ValueError("Current number of gadgets exceeds desired capacity.")
+            return True
 
 
 class LayeredCircuitBuilder(CircuitBuilderBase):
@@ -414,23 +537,28 @@ class LayeredCircuitBuilder(CircuitBuilderBase):
         """Number of layers in the circuit."""
         return len(self._layers)
 
-    def _add_gadget(self, phase: float, legs: PauliArray) -> int:
+    def append(self, gadget: Gadget) -> None:
+        assert self._validate_gadget(gadget)
         m, n = self.num_layers, self._num_qubits
         layers = self._layers
         layer_idx = m
         for i in range(m)[::-1]:
             layer = layers[i]
-            if layer.is_compatible_with(legs):
+            if layer.is_compatible_with(gadget):
                 layer_idx = i
-            elif not layer.commutes_with(legs):
+            elif not layer.commutes_with(gadget):
                 break
         if layer_idx < m:
-            layers[layer_idx].add_gadget(legs, phase)
-            return layer_idx
+            layers[layer_idx].add_gadget(gadget)
+            return
         new_layer = Layer(n)
-        new_layer.add_gadget(legs, phase)
+        new_layer.add_gadget(gadget)
         layers.append(new_layer)
-        return m
+
+    def extend(self, gadgets: Sequence[Gadget] | Circuit) -> None:
+        assert self._validate_gadgets(gadgets)
+        for gadget in gadgets:
+            self.append(gadget)
 
     def __iter__(self) -> Iterator[Gadget]:
         for layer in self._layers:

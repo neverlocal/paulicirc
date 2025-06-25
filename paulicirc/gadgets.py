@@ -977,7 +977,7 @@ class Layer:
         self_legs = self._legs
         for subset in self._phases:
             subset_legs = Layer._select_leg_subset(subset, self_legs)
-            ovlp = sum((subset_legs != legs) & (subset_legs != 0) & (subset_legs != 0))
+            ovlp = sum((subset_legs != legs) & (legs != 0) & (subset_legs != 0))
             if ovlp % 2 != 0:
                 return False
         return True

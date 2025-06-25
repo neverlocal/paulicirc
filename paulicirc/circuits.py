@@ -178,6 +178,8 @@ class Circuit:
     _data: CircuitData
     _num_qubits: int
 
+    __slots__ = ("__weakref__", "_data", "_num_qubits")
+
     def __new__(cls, data: CircuitData, num_qubits: int | None = None) -> Self:
         """
         Constructs a gadget circuit from the given data.

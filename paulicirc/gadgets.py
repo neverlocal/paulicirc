@@ -454,6 +454,8 @@ class Gadget:
     _num_qubits: int
     _ephemeral: bool
 
+    __slots__ = ("__weakref__", "_data", "_num_qubits", "_ephemeral")
+
     def __new__(
         cls,
         data: GadgetData,
@@ -797,6 +799,8 @@ class Layer:
     _legs: PauliArray
     _leg_count: np.ndarray[tuple[int], np.dtype[np.uint32]]
     # FIXME: remove limit to 2**32 gadgets per layer
+
+    __slots__ = ("__weakref__", "_phases", "_legs", "_leg_count")
 
     def __new__(cls, num_qubits: int) -> Self:
         """

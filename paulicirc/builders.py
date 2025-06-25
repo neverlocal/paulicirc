@@ -58,6 +58,8 @@ class CircuitBuilderBase(ABC):
 
     _num_qubits: int
 
+    __slots__ = ("__weakref__", "_num_qubits")
+
     def __new__(cls, num_qubits: int) -> Self:
         """
         Create an empty circuit builder with the given number of qubits.
@@ -344,6 +346,8 @@ class CircuitBuilder(CircuitBuilderBase):
     _circuit: Circuit
     _num_gadgets: int
 
+    __slots__ = ("_circuit", "_num_gadgets")
+
     def __new__(cls, num_qubits: int, *, init_capacity: int = 16) -> Self:
         self = super().__new__(cls, num_qubits)
         self._circuit = Circuit.zero(init_capacity, num_qubits)
@@ -392,6 +396,8 @@ class LayeredCircuitBuilder(CircuitBuilderBase):
     """
 
     _layers: list[Layer]
+
+    __slots__ = ("_layers",)
 
     def __new__(cls, num_qubits: int) -> Self:
         self = super().__new__(cls, num_qubits)

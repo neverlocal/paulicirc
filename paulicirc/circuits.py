@@ -423,7 +423,7 @@ class Circuit:
             qiskit_circ = QiskitQuantumCircuit(num_qubits := self.num_qubits)
             for g in self:
                 gate = QiskitPauliEvolutionGate(
-                    QiskitPauli(g.leg_paulistr.replace("_", "I")), g.phase
+                    QiskitPauli(g.leg_paulistr.replace("_", "I")[::-1]), g.phase/2
                 )
                 qiskit_circ.append(gate, range(num_qubits))
             return qiskit_circ

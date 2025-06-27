@@ -15,8 +15,10 @@
 
 from __future__ import annotations
 from collections.abc import Iterable, Iterator
+from math import ceil, log10
 from typing import (
     Any,
+    Final,
     Literal,
     Self,
     Sequence,
@@ -52,14 +54,14 @@ from .gadgets import (
 if __debug__:
     from typing_validation import validate
 
-try:
-    import qiskit  # type: ignore[import-untyped]
-    from qiskit import QuantumCircuit as QiskitQuantumCircuit
-    from qiskit.circuit.library import PauliEvolutionGate as QiskitPauliEvolutionGate  # type: ignore[import-untyped]
-    from qiskit.quantum_info import Pauli as QiskitPauli  # type: ignore[import-untyped]
+# try:
+#     import qiskit  # type: ignore[import-untyped]
+#     from qiskit import QuantumCircuit as QiskitQuantumCircuit
+#     from qiskit.circuit.library import PauliEvolutionGate as QiskitPauliEvolutionGate  # type: ignore[import-untyped]
+#     from qiskit.quantum_info import Pauli as QiskitPauli  # type: ignore[import-untyped]
 
-except ModuleNotFoundError:
-    pass
+# except ModuleNotFoundError:
+#     pass
 
 
 CircuitData: TypeAlias = UInt8Array2D
@@ -118,6 +120,71 @@ def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     reshaped_exp_circ = exp_circ.reshape(_m // 3, 3 * _n)
     np.apply_along_axis(_aux_commute_pair, 1, reshaped_exp_circ)
     return exp_circ[~np.all(exp_circ == 0, axis=1)]  # type: ignore
+
+
+@final
+class CircuitListing:
+    """A listing for a quantum circuit."""
+
+    _circuit: Circuit
+    _selection: tuple[int, int] | None
+
+    __slots__ = ("__weakref__", "_circuit", "_selection")
+
+    def __new__(cls, circuit: Circuit, selection: tuple[int, int] | None = None) -> Self:
+        """
+        Instantiates a new listing for the given circuit, with optional starting and/or
+        stopping gadget indices.
+
+        :meta public:
+        """
+        if selection is not None:
+            start, stop = selection
+            start, stop, _ = slice(start, stop).indices(len(circuit))
+            selection = (start, stop)
+        self = super().__new__(cls)
+        self._circuit = circuit
+        self._selection = selection
+        return self
+
+    def __getitem__(self, idx: int | slice[int|None, int|None, None]) -> CircuitListing:
+        if self._selection is not None:
+            raise ValueError("Circuit listings can only be sliced once.")
+        if isinstance(idx, int):
+            return CircuitListing(self._circuit, (idx, idx+1))
+        start, stop, _ = idx.indices(len(self._circuit))
+        return CircuitListing(self._circuit, (start, stop))
+
+    def __repr__(self) -> str:
+        """
+        Creates a string listing of the circuit, with gadgets listed one per line,
+        in the format ``idx phase paulistr``.
+
+        :meta public:
+        """
+        circuit = self._circuit
+        if self._selection is not None:
+            start, stop = self._selection
+            if stop <= start or stop <= 0:
+                return ""
+        else:
+            start, stop = 0, len(circuit)
+        data = tuple(
+            (g.phase_str, g.leg_paulistr) for g in circuit.iter_gadgets(
+                start=start, stop=stop, fast=True
+            )
+        )
+        _max_phase_strlen = max(len(s) for s, _ in data)
+        data = tuple(
+            (f"{phase_str: >{_max_phase_strlen}}", paulistr)
+            for phase_str, paulistr in data
+        )
+        num_idx_digits = int(ceil(log10(stop)))
+        idx_range = range(start, stop)
+        return "\n".join(
+            f"{str(idx): >{num_idx_digits}} {phase_str} {paulistr}"
+            for idx, (phase_str, paulistr) in zip(idx_range, data)
+        )
 
 
 @final
@@ -218,6 +285,14 @@ class Circuit:
     def is_zero(self) -> bool:
         """Whether the circuit is all zero (legs set to '_', phases set to 0)."""
         return not np.any(self._data)
+
+    @property
+    def listing(self) -> CircuitListing:
+        """Returns a listing of the circuit."""
+        return CircuitListing(self)
+
+    # TODO: make this into a CircuitListing object,
+    #       with an explicit representation and which can be sliced or selected.
 
     def clone(self) -> Self:
         """Creates a copy of the gadget circuit."""
@@ -328,22 +403,30 @@ class Circuit:
             normalise_phase(res)
         return res
 
-    def iter_gadgets(self, *, fast: bool = False) -> Iterable[Gadget]:
+    def iter_gadgets(
+        self,
+        *,
+        start: int = 0,
+        stop: int | None = None,
+        fast: bool = False
+    ) -> Iterable[Gadget]:
         """
         Iterates over the gadgets in the circuit.
 
         If ``fast`` is set to ``True``, the gadgets yielded are ephemeral:
         they should not be stored, as the same object will be reused in each iteration.
         """
-        if len(self._data) == 0:
+        data = self._data[start:stop]
+        if len(data) == 0:
             return
         if not fast:
-            yield from iter(self)
-            return
-        g = Gadget(self._data[0], self._num_qubits, _ephemeral=True)
-        for row in self._data:
-            g._data = row
-            yield g
+            for row in data:
+                yield Gadget(row, self._num_qubits)
+        else:
+            g = Gadget(self._data[0], self._num_qubits, _ephemeral=True)
+            for row in data:
+                g._data = row
+                yield g
 
     def __iter__(self) -> Iterator[Gadget]:
         """
@@ -417,26 +500,26 @@ class Circuit:
             + self._data.__sizeof__()
         )
 
-    if "qiskit" in globals():
+    # if "qiskit" in globals():
 
-        def to_qiskit(self) -> QiskitQuantumCircuit:
-            qiskit_circ = QiskitQuantumCircuit(num_qubits := self.num_qubits)
-            for g in self:
-                gate = QiskitPauliEvolutionGate(
-                    QiskitPauli(g.leg_paulistr.replace("_", "I")[::-1]), g.phase/2
-                )
-                qiskit_circ.append(gate, range(num_qubits))
-            return qiskit_circ
+    #     def to_qiskit(self) -> QiskitQuantumCircuit:
+    #         qiskit_circ = QiskitQuantumCircuit(num_qubits := self.num_qubits)
+    #         for g in self:
+    #             gate = QiskitPauliEvolutionGate(
+    #                 QiskitPauli(g.leg_paulistr.replace("_", "I")[::-1]), g.phase/2
+    #             )
+    #             qiskit_circ.append(gate, range(num_qubits))
+    #         return qiskit_circ
 
-    else:  # mock qiskit-specific methods
+    # else:  # mock qiskit-specific methods
 
-        def __to_qiskit(self) -> Any:
-            raise ModuleNotFoundError("The 'qiskit' package is not installed.")
+    #     def __to_qiskit(self) -> Any:
+    #         raise ModuleNotFoundError("The 'qiskit' package is not installed.")
 
-        __to_qiskit.__name__ = "to_qiskit"
-        __to_qiskit.__qualname__ = "Circuit.to_qiskit"
-        to_qiskit = __to_qiskit
-        del __to_qiskit
+    #     __to_qiskit.__name__ = "to_qiskit"
+    #     __to_qiskit.__qualname__ = "Circuit.to_qiskit"
+    #     to_qiskit = __to_qiskit
+    #     del __to_qiskit
 
     if __debug__:
 

@@ -33,7 +33,7 @@ import euler
 import numpy as np
 from scipy.linalg import expm  # type: ignore[import-untyped]
 
-from ._numpy import (
+from .utils.numpy import (
     RNG,
     Complex128Array1D,
     Complex128Array2D,
@@ -230,7 +230,7 @@ def is_zero_phase(phase: Phase) -> bool:
 
 def are_same_phase(lhs: Phase, rhs: Phase) -> bool:
     """Whether the given phases are deemed to be the same."""
-    from .utils import options
+    from .utils.options import options
 
     lhs %= 2 * np.pi
     rhs %= 2 * np.pi
@@ -239,7 +239,7 @@ def are_same_phase(lhs: Phase, rhs: Phase) -> bool:
 
 def are_same_phases(lhs: PhaseArray, rhs: PhaseArray) -> bool:
     """Whether the given phase arrays are deemed to be the same."""
-    from .utils import options
+    from .utils.options import options
 
     lhs %= 2 * np.pi
     rhs %= 2 * np.pi
@@ -435,7 +435,7 @@ class Gadget:
         of :attr:`options.display_prec <paulicirc.utils.PauliCircOptions.display_prec>`:
         this is set to 8 by default, corresponding to multiples of :math:`\pi/256`.
         """
-        from .utils import options
+        from .utils.options import options
 
         K = 2**options.display_prec
         return Fraction(round(phase / np.pi * K) % (2 * K), K)

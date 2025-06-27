@@ -2,7 +2,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from paulicirc._numpy import normalise_phase
+from paulicirc.utils.numpy import normalise_phase
 from paulicirc.circuits import Circuit
 from paulicirc.gadgets import Gadget, are_same_phase
 

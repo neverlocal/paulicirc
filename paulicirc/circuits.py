@@ -34,7 +34,7 @@ from typing import (
 import numpy as np
 
 
-from ._numpy import (
+from .utils.numpy import (
     RNG,
     Complex128Array1D,
     Complex128Array2D,

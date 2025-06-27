@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 import paulicirc
-from paulicirc._numpy import normalise_phase
+from paulicirc.utils.numpy import normalise_phase
 from paulicirc.gadgets import (
     PAULI_CHARS,
     PHASE_NBYTES,

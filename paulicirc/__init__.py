@@ -15,7 +15,7 @@
 
 __version__ = "0.2.0"
 
-from .utils import options
+from .utils.options import options
 from .gadgets import Gadget, Layer
 from .circuits import Circuit
 from .builders import CircuitBuilder, LayeredCircuitBuilder

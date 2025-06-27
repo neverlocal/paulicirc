@@ -1,12 +1,13 @@
 ===============
 Getting Started
 ===============
+
 PauliCirc is a library for the vectorized creation and manipulation of quantum circuits consisting of Pauli gadgets.
 
 Install
 =======
 
-You can install the latest release from `PyPI <https://pypi.org/project/dag-cbor/>`_ as follows:
+You can install the latest release from `PyPI <https://pypi.org/project/paulicirc/>`_ as follows:
 
 .. code-block:: console
 

@@ -339,3 +339,33 @@ def test_gadget_inverse(num_qubits: int, legs: PauliArray, phase: Phase) -> None
     assert g_inv.num_qubits == num_qubits
     assert np.array_equal(g.legs, g_inv.legs)
     assert are_same_phase(-g.phase, g_inv.phase)
+
+
+rng = np.random.default_rng(RNG_SEED)
+
+
+@pytest.mark.parametrize(
+    "num_qubits,commutation_code,seed",
+    [
+        (
+            num_qubits,
+            code,
+            rng.integers(0, 65536),
+        )
+        for num_qubits in NUM_QUBITS_RANGE
+        for code in range(8)
+        for _ in range(NUM_RNG_SAMPLES)
+    ]
+)
+def test_gadget_commute_past(
+    num_qubits: int, commutation_code: int, seed: int,
+) -> None:
+    g = Gadget.random(num_qubits, rng=seed)
+    h = Gadget.random(num_qubits, rng=seed+1)
+    u = h.unitary() @ g.unitary()
+    p, q, r = g.commute_past(h, commutation_code)
+    if r is None:
+        v = q.unitary() @ p.unitary()
+    else:
+        v = r.unitary() @ q.unitary() @ p.unitary()
+    assert np.allclose(u, v)

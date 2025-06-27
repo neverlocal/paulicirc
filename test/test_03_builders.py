@@ -3,7 +3,7 @@ import numpy as np
 from numpy import pi, sin, cos, sqrt, exp
 import pytest
 
-from paulicirc._numpy import normalise_phase
+from paulicirc.utils.numpy import normalise_phase
 from paulicirc.builders import CircuitBuilder, LayeredCircuitBuilder
 from paulicirc.circuits import Circuit
 from paulicirc.gadgets import Gadget, Layer

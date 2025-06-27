@@ -22,10 +22,6 @@ PauliCirc
     :target: https://paulicirc.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-.. image:: https://github.com/neverlocal/paulicirc/actions/workflows/python-pytest.yml/badge.svg
-    :target: https://github.com/neverlocal/paulicirc/actions/workflows/python-pytest.yml
-    :alt: Python package status
-
 
 .. contents::
 

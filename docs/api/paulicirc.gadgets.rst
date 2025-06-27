@@ -55,6 +55,11 @@ PauliArray
 
 .. autodata:: paulicirc.gadgets.PauliArray
 
+PauliArray2D
+------------
+
+.. autodata:: paulicirc.gadgets.PauliArray2D
+
 PauliChar
 ---------
 
@@ -99,20 +104,25 @@ _GadgetDataTriple
 
 .. autodata:: paulicirc.gadgets._GadgetDataTriple
 
-_aux_commute_pair
------------------
-
-.. autodata:: paulicirc.gadgets._aux_commute_pair
-
 are_same_phase
 --------------
 
 .. autofunction:: paulicirc.gadgets.are_same_phase
 
+are_same_phases
+---------------
+
+.. autofunction:: paulicirc.gadgets.are_same_phases
+
 broadcast_idxs
 --------------
 
 .. autofunction:: paulicirc.gadgets.broadcast_idxs
+
+commute_gadget_pair
+-------------------
+
+.. autodata:: paulicirc.gadgets.commute_gadget_pair
 
 decode_phases
 -------------
@@ -153,6 +163,11 @@ is_zero_phase
 -------------
 
 .. autodata:: paulicirc.gadgets.is_zero_phase
+
+pauli_product_parity
+--------------------
+
+.. autodata:: paulicirc.gadgets.pauli_product_parity
 
 set_gadget_legs
 ---------------

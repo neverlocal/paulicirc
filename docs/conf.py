@@ -70,6 +70,10 @@ intersphinx_mapping = {
     ),
     "numpy": ("https://numpy.org/doc/stable/", "./intersphinx/numpy-objects.inv"),
     "scipy": ("https://scipy.github.io/devdocs/", "./intersphinx/scipy-objects.inv"),
+    "typing_validation": (
+        "https://optmanage.readthedocs.io/en/latest",
+        "./intersphinx/optmanage-objects.inv",
+    ),
 }
 
 # Add any paths that contain templates here, relative to this directory.

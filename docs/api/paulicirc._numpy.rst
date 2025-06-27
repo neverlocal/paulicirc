@@ -18,6 +18,11 @@ Complex128Array2D
 
 .. autodata:: paulicirc._numpy.Complex128Array2D
 
+ComplexArray1D
+--------------
+
+.. autodata:: paulicirc._numpy.ComplexArray1D
+
 FloatArray1D
 ------------
 

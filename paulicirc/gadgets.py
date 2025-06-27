@@ -22,7 +22,6 @@ from typing import (
     Any,
     Final,
     Literal,
-    Protocol,
     Self,
     Sequence,
     SupportsIndex,
@@ -41,6 +40,7 @@ from ._numpy import (
     ComplexArray1D,
     FloatArray1D,
     UInt8Array1D,
+    UInt8Array2D,
     normalise_phase,
     numba_jit,
 )
@@ -58,6 +58,11 @@ Type alias for a Pauli, encoded as a 2-bit integer:
 PauliArray: TypeAlias = UInt8Array1D
 """
 Type alias for a 1D array of Paulis, as 1D UInt8 array with entries in ``range(4)``.
+"""
+
+PauliArray2D: TypeAlias = UInt8Array2D
+"""
+Type alias for a 2D array of Paulis, as 1D UInt8 array with entries in ``range(4)``.
 """
 
 PauliChar: TypeAlias = Literal["_", "X", "Z", "Y"]
@@ -186,9 +191,6 @@ def get_gadget_legs(g: GadgetData) -> PauliArray:
     legs[2::4] = (leg_bytes & 0b00_00_11_00) >> 2
     legs[3::4] = leg_bytes & 0b00_00_00_11
     return legs
-    # return (
-    #     leg_bytes.repeat(4) & np.tile(_LEG_BYTE_MASKS << _LEG_BYTE_SHIFTS, n)
-    # ) >> np.tile(_LEG_BYTE_SHIFTS, n)
 
 
 def set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
@@ -232,6 +234,13 @@ def are_same_phase(lhs: Phase, rhs: Phase) -> bool:
     lhs %= 2 * np.pi
     rhs %= 2 * np.pi
     return bool(np.isclose(lhs, rhs, options.rtol, options.atol))
+
+def are_same_phases(lhs: PhaseArray, rhs: PhaseArray) -> bool:
+    """Whether the given phase arrays are deemed to be the same."""
+    from .utils import options
+    lhs %= 2 * np.pi
+    rhs %= 2 * np.pi
+    return bool(np.isclose(lhs, rhs, options.rtol, options.atol).all())
 
 
 @numba_jit
@@ -300,7 +309,7 @@ Data for the third gadget is set to zero, except for a commutation code
 
 
 @numba_jit
-def _product_parity(p: GadgetData, q: GadgetData) -> int:
+def pauli_product_parity(p: GadgetData, q: GadgetData) -> int:
     p_legs = get_gadget_legs(p)
     q_legs = get_gadget_legs(q)
     s = 0
@@ -311,7 +320,7 @@ def _product_parity(p: GadgetData, q: GadgetData) -> int:
 
 
 @numba_jit
-def _aux_commute_pair(row: _GadgetDataTriple) -> None:
+def commute_gadget_pair(row: _GadgetDataTriple) -> None:
     """
     Auxiliary function used by :func:`Gadget.commute_past` to commute a pair of gadgets.
     It operates on a single array, containing the linearised data for the two gadgets
@@ -332,7 +341,7 @@ def _aux_commute_pair(row: _GadgetDataTriple) -> None:
     if xi == 0:
         return
     r = p ^ q  # phase bytes will be overwritten later
-    prod_parity = _product_parity(p, q)
+    prod_parity = pauli_product_parity(p, q)
     if xi < 3:
         if xi == 1:
             # 0zx -> zyz
@@ -559,9 +568,9 @@ class Gadget:
         return get_gadget_legs(self._data)[: self._num_qubits]
 
     @legs.setter
-    def legs(self, value: Sequence[Pauli] | PauliArray | str) -> None:
+    def legs(self, value: PauliArray) -> None:
         """Sets the legs of the gadget."""
-        assert validate(value, Sequence[Pauli] | PauliArray | str)
+        assert validate(value, PauliArray | str | Sequence[Pauli])
         if isinstance(value, str):
             legs = Gadget.legs_from_paulistr(value)
         else:
@@ -580,16 +589,8 @@ class Gadget:
         return get_phase(self._data)
 
     @phase.setter
-    def phase(self, value: Phase | float | Fraction) -> None:
-        r"""
-        Sets the phase of the gadget:
-
-        - exactly, as an integer;
-        - approximately, as a float, rounded to the nearest multiple of :math:`\pi/32768`;
-        - exactly, as a fraction with denominator dividing 32768;
-        - approximately, as a fraction with any other denominator, converted to float.
-
-        """
+    def phase(self, value: Phase | Fraction) -> None:
+        r"""Sets the phase of the gadget."""
         if isinstance(value, Phase):
             set_phase(self._data, value)
             return
@@ -724,7 +725,7 @@ class Gadget:
         row[:n] = data
         row[n : 2 * n] = other._data
         row[-1] = code
-        _aux_commute_pair(row)
+        commute_gadget_pair(row)
         return (
             Gadget(row[:n], num_qubits),
             Gadget(row[n : 2 * n], num_qubits),

@@ -18,11 +18,13 @@
             "FloatArray1D",
             "Complex128Array1D",
             "Complex128Array2D",
+            "ComplexArray1D",
             "RNG"
         ],
         "paulicirc.gadgets": [
             "Pauli",
             "PauliArray",
+            "PauliArray2D",
             "PauliChar",
             "GadgetData",
             "Phase",

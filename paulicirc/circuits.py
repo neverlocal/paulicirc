@@ -15,13 +15,16 @@
 
 from __future__ import annotations
 from collections.abc import Iterable, Iterator
+from fractions import Fraction
 from math import ceil, log10
+import sys
 from typing import (
+    TYPE_CHECKING,
     Any,
-    Final,
     Literal,
     Self,
     Sequence,
+    SupportsFloat,
     SupportsIndex,
     TypeAlias,
     cast,
@@ -35,33 +38,36 @@ from ._numpy import (
     RNG,
     Complex128Array1D,
     Complex128Array2D,
+    ComplexArray1D,
+    FloatArray1D,
     UInt8Array1D,
     UInt8Array2D,
     normalise_phase,
+    numba_jit,
 )
 from .gadgets import (
     PHASE_DTYPE,
     PHASE_NBYTES,
     Gadget,
+    PauliArray,
     PhaseArray,
+    PauliArray2D,
+    are_same_phases,
     decode_phases,
     encode_phases,
     gadget_data_len,
     invert_phases,
-    _aux_commute_pair,
+    commute_gadget_pair,
 )
 
 if __debug__:
     from typing_validation import validate
 
-# try:
-#     import qiskit  # type: ignore[import-untyped]
-#     from qiskit import QuantumCircuit as QiskitQuantumCircuit
-#     from qiskit.circuit.library import PauliEvolutionGate as QiskitPauliEvolutionGate  # type: ignore[import-untyped]
-#     from qiskit.quantum_info import Pauli as QiskitPauli  # type: ignore[import-untyped]
-
-# except ModuleNotFoundError:
-#     pass
+if TYPE_CHECKING:
+    try:
+        from qiskit import QuantumCircuit as QiskitQuantumCircuit # type: ignore[import-untyped]
+    except ModuleNotFoundError:
+        pass
 
 
 CircuitData: TypeAlias = UInt8Array2D
@@ -76,7 +82,7 @@ and associated commutation code conventions.
 """
 
 
-def _zero_circ(m: int, n: int) -> CircuitData:
+def zero_circ(m: int, n: int) -> CircuitData:
     """
     Returns a circuit with ``m`` gadgets on ``n`` qubits,
     where all gadgets have no legs and zero phase.
@@ -87,7 +93,7 @@ def _zero_circ(m: int, n: int) -> CircuitData:
     return np.zeros((m, ncols), dtype=np.uint8)
 
 
-def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
+def rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
     """
     Returns a uniformly random circuit with ``m`` gadgets on ``n`` qubits.
     """
@@ -101,6 +107,38 @@ def _rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
     phases = rng.uniform(0.0, 2*np.pi, size=m).astype(PHASE_DTYPE)
     data[:, -PHASE_NBYTES:] = encode_phases(phases)
     return data
+
+
+@numba_jit
+def get_circuit_legs(circ: CircuitData) -> PauliArray2D:
+    """
+    Extract a 2D array of leg information from given circuit data.
+    The returned array has values in ``range(4)``,
+    where the encoding is explained in :obj:`~paulicirc.gadgets.GadgetData`.
+    """
+    leg_bytes = circ[:, :-PHASE_NBYTES]
+    m, n = leg_bytes.shape
+    legs = np.zeros((m, 4 * n), dtype=np.uint8)
+    legs[:, ::4] = (leg_bytes & 0b11_00_00_00) >> 6
+    legs[:, 1::4] = (leg_bytes & 0b00_11_00_00) >> 4
+    legs[:, 2::4] = (leg_bytes & 0b00_00_11_00) >> 2
+    legs[:, 3::4] = leg_bytes & 0b00_00_00_11
+    return legs
+
+
+def set_circuit_legs(circ: CircuitData, legs: PauliArray2D) -> None:
+    """
+    Sets leg information in the given circuit data.
+    The input array should have values in ``range(4)``,
+    where the encoding is explained in :obj:`~paulicirc.gadgets.GadgetData`.
+    """
+    _, n = legs.shape
+    leg_data = circ[:, :-PHASE_NBYTES]
+    leg_data[:, :] = 0
+    leg_data[:, : -(-(n - 0) // 4)] |= legs[:, 0::4] << 6  # type: ignore # ok in Numpy 2.3
+    leg_data[:, : -(-(n - 1) // 4)] |= legs[:, 1::4] << 4  # type: ignore # ok in Numpy 2.3
+    leg_data[:, : -(-(n - 2) // 4)] |= legs[:, 2::4] << 2  # type: ignore # ok in Numpy 2.3
+    leg_data[:, : -(-(n - 3) // 4)] |= legs[:, 3::4]
 
 
 def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
@@ -118,7 +156,7 @@ def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     exp_circ[1 : _m - 2 * (m % 2) : 3] = circ[1::2]
     exp_circ[2 : _m - (m % 2) : 3, -1] = codes % 8
     reshaped_exp_circ = exp_circ.reshape(_m // 3, 3 * _n)
-    np.apply_along_axis(_aux_commute_pair, 1, reshaped_exp_circ)
+    np.apply_along_axis(commute_gadget_pair, 1, reshaped_exp_circ)
     return exp_circ[~np.all(exp_circ == 0, axis=1)]  # type: ignore
 
 
@@ -198,7 +236,7 @@ class Circuit:
         where all gadgets have no legs and zero phase.
         """
         assert Circuit._validate_circ_shape(num_gadgets, num_qubits)
-        data = _zero_circ(num_gadgets, num_qubits)
+        data = zero_circ(num_gadgets, num_qubits)
         return cls(data, num_qubits)
 
     @classmethod
@@ -212,7 +250,7 @@ class Circuit:
         assert Circuit._validate_circ_shape(num_gadgets, num_qubits)
         if not isinstance(rng, RNG):
             rng = np.random.default_rng(rng)
-        data = _rand_circ(num_gadgets, num_qubits, rng=rng)
+        data = rand_circ(num_gadgets, num_qubits, rng=rng)
         return cls(data, num_qubits)
 
     @classmethod
@@ -276,10 +314,36 @@ class Circuit:
         return decode_phases(self._data[:, -PHASE_NBYTES:])
 
     @phases.setter
-    def phases(self, value: PhaseArray) -> None:
+    def phases(self, value: PhaseArray | Sequence[SupportsFloat | Fraction]) -> None:
         """Sets phases for the gadgets in the circuit."""
+        if not isinstance(value, np.ndarray):
+            assert validate(value, Sequence[SupportsFloat | Fraction])
+            value = np.array([
+                float(phase) if isinstance(phase, SupportsFloat)
+                else Gadget.frac2phase(phase)
+                for phase in value
+            ], dtype=PHASE_DTYPE)
         assert self._validate_phases_value(value)
         self._data[:, -PHASE_NBYTES:] = encode_phases(value)
+
+    @property
+    def legs(self) -> PauliArray2D:
+        """The 2D array of gadget legs for this circuit."""
+        return get_circuit_legs(self._data)[:,:self._num_qubits]
+
+    @legs.setter
+    def legs(
+        self,
+        value: PauliArray2D | Sequence[str|PauliArray|Sequence[int]]
+    ) -> None:
+        """Sets the legs of the circuit."""
+        if isinstance(value, np.ndarray):
+            assert self._validate_legs_value(value)
+            set_circuit_legs(self._data, value)
+        else:
+            assert validate(value, Sequence[Any])
+            for idx, line in enumerate(value):
+                self[idx].legs = line # type: ignore
 
     @property
     def is_zero(self) -> bool:
@@ -290,9 +354,6 @@ class Circuit:
     def listing(self) -> CircuitListing:
         """Returns a listing of the circuit."""
         return CircuitListing(self)
-
-    # TODO: make this into a CircuitListing object,
-    #       with an explicit representation and which can be sliced or selected.
 
     def clone(self) -> Self:
         """Creates a copy of the gadget circuit."""
@@ -380,7 +441,7 @@ class Circuit:
 
     def statevec(
         self,
-        input: Complex128Array1D,
+        input: ComplexArray1D | FloatArray1D,
         normalize_phase: bool = True,
         _use_cupy: bool = False,  # currently in alpha
     ) -> Complex128Array1D:
@@ -388,11 +449,10 @@ class Circuit:
         Computes the statevector resulting from the application of this gadget circuit
         to the given input statevector.
         """
-        assert validate(input, Complex128Array1D)
-        res = input
+        assert validate(input, ComplexArray1D | FloatArray1D)
+        res = input.astype(np.complex128)
         if _use_cupy:
             import cupy as cp
-
             res = cp.asarray(res)
         for gadget in self:
             gadget_u = gadget.unitary(normalize_phase=False)
@@ -486,7 +546,8 @@ class Circuit:
         return (
             self.num_qubits == other.num_qubits
             and self.num_gadgets == other.num_gadgets
-            and all(g == h for g, h in zip(self, other, strict=True))
+            and np.array_equal(self._data[:-PHASE_NBYTES], other._data[:-PHASE_NBYTES])
+            and are_same_phases(self.phases, other.phases)
         )
 
     def __repr__(self) -> str:
@@ -500,26 +561,20 @@ class Circuit:
             + self._data.__sizeof__()
         )
 
-    # if "qiskit" in globals():
-
-    #     def to_qiskit(self) -> QiskitQuantumCircuit:
-    #         qiskit_circ = QiskitQuantumCircuit(num_qubits := self.num_qubits)
-    #         for g in self:
-    #             gate = QiskitPauliEvolutionGate(
-    #                 QiskitPauli(g.leg_paulistr.replace("_", "I")[::-1]), g.phase/2
-    #             )
-    #             qiskit_circ.append(gate, range(num_qubits))
-    #         return qiskit_circ
-
-    # else:  # mock qiskit-specific methods
-
-    #     def __to_qiskit(self) -> Any:
-    #         raise ModuleNotFoundError("The 'qiskit' package is not installed.")
-
-    #     __to_qiskit.__name__ = "to_qiskit"
-    #     __to_qiskit.__qualname__ = "Circuit.to_qiskit"
-    #     to_qiskit = __to_qiskit
-    #     del __to_qiskit
+    def to_qiskit(self) -> QiskitQuantumCircuit:
+        try:
+            from qiskit import QuantumCircuit as QiskitQuantumCircuit
+            from qiskit.circuit.library import PauliEvolutionGate as QiskitPauliEvolutionGate  # type: ignore[import-untyped]
+            from qiskit.quantum_info import Pauli as QiskitPauli  # type: ignore[import-untyped]
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError("The 'qiskit' package is not installed.")
+        qiskit_circ = QiskitQuantumCircuit(num_qubits := self.num_qubits)
+        for g in self:
+            gate = QiskitPauliEvolutionGate(
+                QiskitPauli(g.leg_paulistr.replace("_", "I")[::-1]), g.phase/2
+            )
+            qiskit_circ.append(gate, range(num_qubits))
+        return qiskit_circ
 
     if __debug__:
 
@@ -580,6 +635,13 @@ class Circuit:
             validate(value, PhaseArray)
             if len(value) != self.num_gadgets:
                 raise ValueError("Number of phases does not match number of gadgets.")
+            return True
+
+        def _validate_legs_value(self, legs: PauliArray2D) -> Literal[True]:
+            """Validates the value of the :attr:`legs` property."""
+            validate(legs, PauliArray2D)
+            if legs.shape != (self.num_gadgets, self.num_qubits):
+                raise ValueError("Shape of legs does not match shape of circuit.")
             return True
 
         def _validate_commutation_codes(

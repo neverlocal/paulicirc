@@ -8,13 +8,16 @@ def _validate_decimal_prec(prec: int) -> None:
     if prec < 0:
         raise ValueError("Display precisions must be >= 0.")
 
+
 def _validate_atol(atol: float) -> None:
     if atol < 0.0:
         raise ValueError("Absolute tolerance must be >= 0.")
 
+
 def _validate_rtol(rtol: float) -> None:
     if rtol < 0.0:
         raise ValueError("Relative tolerance must be >= 0.")
+
 
 class PauliCircOptions(OptionManager):
     """
@@ -29,6 +32,7 @@ class PauliCircOptions(OptionManager):
 
     rtol: Option[float] = Option(float, 1e-8, _validate_atol)
     """Relative tolerance used in phase equality comparison."""
+
 
 options: Final = PauliCircOptions()
 """

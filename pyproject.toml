@@ -1,8 +1,8 @@
 [project]
 name = "paulicirc"
-version = "0.1.0"
+version = "0.2.0"
 authors = [{ name = "NeverLocal" }]
-description = "Quantum circuit obfuscation based on Pauli gadgets."
+description = "A library for quantum circuits based on Pauli gadgets."
 readme = "README.rst"
 requires-python = ">=3.10"
 license = "LGPL-3.0"

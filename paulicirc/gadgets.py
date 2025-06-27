@@ -231,13 +231,16 @@ def is_zero_phase(phase: Phase) -> bool:
 def are_same_phase(lhs: Phase, rhs: Phase) -> bool:
     """Whether the given phases are deemed to be the same."""
     from .utils import options
+
     lhs %= 2 * np.pi
     rhs %= 2 * np.pi
     return bool(np.isclose(lhs, rhs, options.rtol, options.atol))
 
+
 def are_same_phases(lhs: PhaseArray, rhs: PhaseArray) -> bool:
     """Whether the given phase arrays are deemed to be the same."""
     from .utils import options
+
     lhs %= 2 * np.pi
     rhs %= 2 * np.pi
     return bool(np.isclose(lhs, rhs, options.rtol, options.atol).all())
@@ -433,6 +436,7 @@ class Gadget:
         this is set to 8 by default, corresponding to multiples of :math:`\pi/256`.
         """
         from .utils import options
+
         K = 2**options.display_prec
         return Fraction(round(phase / np.pi * K) % (2 * K), K)
 

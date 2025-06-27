@@ -65,7 +65,7 @@ if __debug__:
 
 if TYPE_CHECKING:
     try:
-        from qiskit import QuantumCircuit as QiskitQuantumCircuit # type: ignore[import-untyped]
+        from qiskit import QuantumCircuit as QiskitQuantumCircuit  # type: ignore[import-untyped]
     except ModuleNotFoundError:
         pass
 
@@ -104,7 +104,7 @@ def rand_circ(m: int, n: int, *, rng: RNG) -> CircuitData:
         mask = np.uint8(0b11111111 << 2 * (-n % 4) & 0b11111111)
         data[:, -PHASE_NBYTES - 1] &= mask
     # sets the phase bytes
-    phases = rng.uniform(0.0, 2*np.pi, size=m).astype(PHASE_DTYPE)
+    phases = rng.uniform(0.0, 2 * np.pi, size=m).astype(PHASE_DTYPE)
     data[:, -PHASE_NBYTES:] = encode_phases(phases)
     return data
 
@@ -169,7 +169,9 @@ class CircuitListing:
 
     __slots__ = ("__weakref__", "_circuit", "_selection")
 
-    def __new__(cls, circuit: Circuit, selection: tuple[int, int] | None = None) -> Self:
+    def __new__(
+        cls, circuit: Circuit, selection: tuple[int, int] | None = None
+    ) -> Self:
         """
         Instantiates a new listing for the given circuit, with optional starting and/or
         stopping gadget indices.
@@ -185,11 +187,13 @@ class CircuitListing:
         self._selection = selection
         return self
 
-    def __getitem__(self, idx: int | slice[int|None, int|None, None]) -> CircuitListing:
+    def __getitem__(
+        self, idx: int | slice[int | None, int | None, None]
+    ) -> CircuitListing:
         if self._selection is not None:
             raise ValueError("Circuit listings can only be sliced once.")
         if isinstance(idx, int):
-            return CircuitListing(self._circuit, (idx, idx+1))
+            return CircuitListing(self._circuit, (idx, idx + 1))
         start, stop, _ = idx.indices(len(self._circuit))
         return CircuitListing(self._circuit, (start, stop))
 
@@ -208,9 +212,8 @@ class CircuitListing:
         else:
             start, stop = 0, len(circuit)
         data = tuple(
-            (g.phase_str, g.leg_paulistr) for g in circuit.iter_gadgets(
-                start=start, stop=stop, fast=True
-            )
+            (g.phase_str, g.leg_paulistr)
+            for g in circuit.iter_gadgets(start=start, stop=stop, fast=True)
         )
         _max_phase_strlen = max(len(s) for s, _ in data)
         data = tuple(
@@ -318,23 +321,28 @@ class Circuit:
         """Sets phases for the gadgets in the circuit."""
         if not isinstance(value, np.ndarray):
             assert validate(value, Sequence[SupportsFloat | Fraction])
-            value = np.array([
-                float(phase) if isinstance(phase, SupportsFloat)
-                else Gadget.frac2phase(phase)
-                for phase in value
-            ], dtype=PHASE_DTYPE)
+            value = np.array(
+                [
+                    (
+                        float(phase)
+                        if isinstance(phase, SupportsFloat)
+                        else Gadget.frac2phase(phase)
+                    )
+                    for phase in value
+                ],
+                dtype=PHASE_DTYPE,
+            )
         assert self._validate_phases_value(value)
         self._data[:, -PHASE_NBYTES:] = encode_phases(value)
 
     @property
     def legs(self) -> PauliArray2D:
         """The 2D array of gadget legs for this circuit."""
-        return get_circuit_legs(self._data)[:,:self._num_qubits]
+        return get_circuit_legs(self._data)[:, : self._num_qubits]
 
     @legs.setter
     def legs(
-        self,
-        value: PauliArray2D | Sequence[str|PauliArray|Sequence[int]]
+        self, value: PauliArray2D | Sequence[str | PauliArray | Sequence[int]]
     ) -> None:
         """Sets the legs of the circuit."""
         if isinstance(value, np.ndarray):
@@ -343,7 +351,7 @@ class Circuit:
         else:
             assert validate(value, Sequence[Any])
             for idx, line in enumerate(value):
-                self[idx].legs = line # type: ignore
+                self[idx].legs = line  # type: ignore
 
     @property
     def is_zero(self) -> bool:
@@ -453,6 +461,7 @@ class Circuit:
         res = input.astype(np.complex128)
         if _use_cupy:
             import cupy as cp
+
             res = cp.asarray(res)
         for gadget in self:
             gadget_u = gadget.unitary(normalize_phase=False)
@@ -464,11 +473,7 @@ class Circuit:
         return res
 
     def iter_gadgets(
-        self,
-        *,
-        start: int = 0,
-        stop: int | None = None,
-        fast: bool = False
+        self, *, start: int = 0, stop: int | None = None, fast: bool = False
     ) -> Iterable[Gadget]:
         """
         Iterates over the gadgets in the circuit.
@@ -571,7 +576,7 @@ class Circuit:
         qiskit_circ = QiskitQuantumCircuit(num_qubits := self.num_qubits)
         for g in self:
             gate = QiskitPauliEvolutionGate(
-                QiskitPauli(g.leg_paulistr.replace("_", "I")[::-1]), g.phase/2
+                QiskitPauli(g.leg_paulistr.replace("_", "I")[::-1]), g.phase / 2
             )
             qiskit_circ.append(gate, range(num_qubits))
         return qiskit_circ

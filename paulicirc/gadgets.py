@@ -302,13 +302,8 @@ See :class:`Gadget.commute_past` for a description of the commutation procedure 
 associated commutation code conventions.
 """
 
-_GadgetDataTriple: TypeAlias = UInt8Array1D
-"""
-1D array containing the linearised data for three gadgets.
-
-Data for the third gadget is set to zero, except for a commutation code
-(cf. :obj:`CommutationCodeArray`) which has been written onto the last byte.
-"""
+GadgetDataTriple: TypeAlias = UInt8Array1D
+"""1D array containing the linearised data for three gadgets."""
 
 
 @numba_jit
@@ -323,11 +318,14 @@ def pauli_product_parity(p: GadgetData, q: GadgetData) -> int:
 
 
 @numba_jit
-def commute_gadget_pair(row: _GadgetDataTriple) -> None:
+def commute_gadget_pair(row: GadgetDataTriple) -> None:
     """
     Auxiliary function used by :func:`Gadget.commute_past` to commute a pair of gadgets.
     It operates on a single array, containing the linearised data for the two gadgets
-    to be commuted, as well as auxiliary space; see :obj:`_GadgetDataTriple`.
+    to be commuted, as well as auxiliary space for a third gadget.
+    It expects data for the third gadget to be set to zero, except for the desired
+    commutation code (cf. :obj:`CommutationCode`) which should be written on the
+    last byte.
     """
     TOL = 1e-8
     n = len(row) // 3
@@ -725,7 +723,7 @@ class Gadget:
             return (other, self, None)
         data = self._data
         num_qubits = self.num_qubits
-        row: _GadgetDataTriple = np.zeros(3 * (n := len(data)), dtype=np.uint8)
+        row: GadgetDataTriple = np.zeros(3 * (n := len(data)), dtype=np.uint8)
         row[:n] = data
         row[n : 2 * n] = other._data
         row[-1] = code

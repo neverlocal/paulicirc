@@ -135,13 +135,13 @@ def set_circuit_legs(circ: CircuitData, legs: PauliArray2D) -> None:
     _, n = legs.shape
     leg_data = circ[:, :-PHASE_NBYTES]
     leg_data[:, :] = 0
-    leg_data[:, : -(-(n - 0) // 4)] |= legs[:, 0::4] << 6  # type: ignore # ok in Numpy 2.3
-    leg_data[:, : -(-(n - 1) // 4)] |= legs[:, 1::4] << 4  # type: ignore # ok in Numpy 2.3
-    leg_data[:, : -(-(n - 2) // 4)] |= legs[:, 2::4] << 2  # type: ignore # ok in Numpy 2.3
+    leg_data[:, : -(-(n - 0) // 4)] |= legs[:, 0::4] << 6
+    leg_data[:, : -(-(n - 1) // 4)] |= legs[:, 1::4] << 4
+    leg_data[:, : -(-(n - 2) // 4)] |= legs[:, 2::4] << 2
     leg_data[:, : -(-(n - 3) // 4)] |= legs[:, 3::4]
 
 
-def commute(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
+def commute_circuit(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
     """
     Commutes subsequent gadget pairs in the circuit according to the given codes.
     Expects the number of codes to be ``m//2``, where ``m`` is the number of gadgets.
@@ -257,18 +257,6 @@ class Circuit:
         return cls(data, num_qubits)
 
     @classmethod
-    def random_inverse_pairs(
-        cls, num_pairs: int, num_qubits: int, *, rng: int | RNG | None = None
-    ) -> Self:
-        """Constructs a circuit consisting of inverse pairs of random gadgets."""
-        gadgets = Circuit.random(num_pairs, num_qubits, rng=rng)
-        circ = Circuit.zero(2 * num_pairs, num_qubits)
-        circ[::2] = gadgets
-        gadgets.invert_phases()
-        circ[1::2] = gadgets
-        return circ
-
-    @classmethod
     def from_gadgets(
         cls, gadgets: Iterable[Gadget], num_qubits: int | None = None
     ) -> Self:
@@ -351,7 +339,7 @@ class Circuit:
         else:
             assert validate(value, Sequence[Any])
             for idx, line in enumerate(value):
-                self[idx].legs = line  # type: ignore
+                self[idx].legs = line
 
     @property
     def is_zero(self) -> bool:
@@ -379,22 +367,6 @@ class Circuit:
         """Inverts phases inplace, keeping gadget order unchanged."""
         invert_phases(self._data[:, -PHASE_NBYTES:])
 
-    def random_commutation_codes(
-        self, *, non_zero: bool = False, rng: int | RNG | None = None
-    ) -> CommutationCodeArray:
-        """
-        Returns an array of randomly sampled commutation codes for this circuit.
-
-        If ``non_zero`` is set to :obj:`True`, commutation codes are all non-zero,
-        forcing commutation for all pairs.
-
-        See :class:`Gadget.commute_past` for a description of the commutation procedure
-        and associated commutation code conventions.
-        """
-        if not isinstance(rng, RNG):
-            rng = np.random.default_rng(rng)
-        return rng.integers(int(non_zero), 8, self.num_gadgets // 2, dtype=np.uint8)
-
     def commute(self, codes: Sequence[int] | CommutationCodeArray) -> Self:
         """
         Commutes adjacent gadget pairs in the circuit according to the given commutation
@@ -407,22 +379,7 @@ class Circuit:
         assert self._validate_commutation_codes(codes)
         if len(self) == 0:
             return self.clone()
-        return Circuit(commute(self._data, codes), self._num_qubits)
-
-    def random_commute(
-        self, *, non_zero: bool = False, rng: int | RNG | None = None
-    ) -> Self:
-        """
-        Commutes adjacent gadget pairs in the circuit according to randomly sampled
-        commutation codes.
-
-        See :class:`Gadget.commute_past` for a description of the commutation procedure
-        and associated commutation code conventions.
-        """
-        if len(self) == 0:
-            return self.clone()
-        codes = self.random_commutation_codes(non_zero=non_zero, rng=rng)
-        return self.commute(codes)
+        return Circuit(commute_circuit(self._data, codes), self._num_qubits)
 
     def unitary(
         self,

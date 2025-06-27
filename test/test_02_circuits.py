@@ -336,14 +336,17 @@ def test_circuit_random_commute_repeated(
         circ.random_commute(non_zero=non_zero, rng=seed + 1 + k)
     assert np.allclose(u, circ.unitary())
 
+
 def bit_reverse(i: int, n: int) -> int:
     return int(f"{i:0>{n}b}"[::-1], 2)
+
 
 def reorder_qiskit_unitary(u: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
     n = int(np.log2(u.shape[0]))
     assert u.shape == (2**n, 2**n)
     perm = [bit_reverse(i, n) for i in range(2**n)]
     return u[np.ix_(perm, perm)]
+
 
 try:
     from qiskit.quantum_info import Operator  # type: ignore[import-untyped]

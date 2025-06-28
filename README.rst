@@ -27,6 +27,7 @@ PauliCirc
 
 
 PauliCirc is a library for the vectorized creation and manipulation of quantum circuits consisting of Pauli gadgets.
+The library is in alpha stage and active development, so please be mindful that bugs are possible at this stage.
 
 Install
 =======

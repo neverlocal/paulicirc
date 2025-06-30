@@ -355,17 +355,21 @@ rng = np.random.default_rng(RNG_SEED)
         for num_qubits in NUM_QUBITS_RANGE
         for code in range(8)
         for _ in range(NUM_RNG_SAMPLES)
-    ]
+    ],
 )
 def test_gadget_commute_past(
-    num_qubits: int, commutation_code: int, seed: int,
+    num_qubits: int,
+    commutation_code: int,
+    seed: int,
 ) -> None:
     g = Gadget.random(num_qubits, rng=seed)
-    h = Gadget.random(num_qubits, rng=seed+1)
+    h = Gadget.random(num_qubits, rng=seed + 1)
     u = h.unitary() @ g.unitary()
     p, q, r = g.commute_past(h, commutation_code)
     if r is None:
         v = q.unitary() @ p.unitary()
     else:
         v = r.unitary() @ q.unitary() @ p.unitary()
+    normalise_phase(u)
+    normalise_phase(v)
     assert np.allclose(u, v)

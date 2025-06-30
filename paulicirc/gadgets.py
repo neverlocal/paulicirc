@@ -279,14 +279,6 @@ def invert_phases(phase_data: PhaseDataArray) -> None:
     phase_data[:] = encode_phases(-decode_phases(phase_data))
 
 
-_convert_0zx_yxz = numba_jit(euler.convert_xzx_yxz)
-_convert_0zx_xyz = numba_jit(euler.convert_xzx_xyz)
-_convert_0zx_xzy = numba_jit(euler.convert_xzx_xzy)
-_convert_0zx_yxy = numba_jit(euler.convert_xzx_yxy)
-_convert_0zx_yzy = numba_jit(euler.convert_xzx_yzy)
-_convert_0zx_xyx = numba_jit(euler.convert_xzx_xyx)
-_convert_0zx_zyz = numba_jit(euler.convert_xzx_zyz)
-
 _convert_0xz_yzx = numba_jit(euler.convert_zxz_yzx)
 _convert_0xz_zyx = numba_jit(euler.convert_zxz_zyx)
 _convert_0xz_zxy = numba_jit(euler.convert_zxz_zxy)
@@ -307,14 +299,17 @@ GadgetDataTriple: TypeAlias = UInt8Array1D
 
 
 @numba_jit
-def pauli_product_parity(p: GadgetData, q: GadgetData) -> int:
-    p_legs = get_gadget_legs(p)
-    q_legs = get_gadget_legs(q)
-    s = 0
-    for p_pauli, q_pauli in zip(p_legs, q_legs):
-        if (p_pauli, q_pauli) in [(2, 1), (1, 3), (3, 2)]:  # type: ignore[comparison-overlap]
-            s += 1
-    return s % 2
+def pauli_product_phase(g: GadgetData, h: GadgetData) -> int:
+    """
+    Auxiliary function which computes the phase acquired by a product of two
+    paulistrings. Returns an integer :math:`e` modulo 4, such that the phase
+    is :math:`i^{e}`.
+    """
+    g_legs = get_gadget_legs(g).astype(np.int8)
+    h_legs = get_gadget_legs(h).astype(np.int8)
+    return int(
+        np.sum((((h_legs - g_legs + 1) % 3) - 1) * ((g_legs != 0) & (h_legs != 0))) % 4
+    )
 
 
 @numba_jit
@@ -342,80 +337,75 @@ def commute_gadget_pair(row: GadgetDataTriple) -> None:
     if xi == 0:
         return
     r = p ^ q  # phase bytes will be overwritten later
-    prod_parity = pauli_product_parity(p, q)
+    flip_y = ((pauli_product_phase(p, q) + 1) // 2) % 2
     if xi < 3:
         if xi == 1:
-            # 0zx -> zyz
+            # 0xz -> xyx
             # 0qp -> qrq
             row[:n] = q
             row[n : 2 * n] = r
             row[2 * n :] = q
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_zyz(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_xyx(0, b, a, TOL)
+            _a, _b, _c = _convert_0xz_xyx(0, b, a, TOL)
+            if flip_y:
+                _b = -_b
         else:  # xi == 2
-            # 0zx -> yzy
+            # 0xz -> yxy
             # 0qp -> rqr
             row[:n] = r
             row[n : 2 * n] = q
             row[2 * n :] = r
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_yzy(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_yxy(0, b, a, TOL)
+            _a, _b, _c = _convert_0xz_yxy(0, b, a, TOL)
+            if flip_y:
+                _a = -_a
+                _c = -_c
     elif xi < 5:
         if xi == 3:
-            # 0zx -> xyx
+            # 0xz -> zyz
             # 0qp -> prp
             row[:n] = p
             row[n : 2 * n] = r
             row[2 * n :] = p
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_xyx(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_zyz(0, b, a, TOL)
+            _a, _b, _c = _convert_0xz_zyz(0, b, a, TOL)
+            if flip_y:
+                _b = -_b
         else:  # xi == 4
-            # 0zx -> yxy
+            # 0xz -> yzy
             # 0qp -> rpr
             row[:n] = r
             row[n : 2 * n] = p
             row[2 * n :] = r
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_yxy(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_yzy(0, b, a, TOL)
+            _a, _b, _c = _convert_0xz_yzy(0, b, a, TOL)
+            if flip_y:
+                _a = -_a
+                _c = -_c
     else:
         if xi == 5:
-            # 0zx -> yxz
+            # 0xz -> yzx
             # 0qp -> rpq
             row[:n] = q
             row[n : 2 * n] = p
             row[2 * n :] = r
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_yxz(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_yzx(0, b, a, TOL)
+            _a, _b, _c = _convert_0xz_yzx(0, b, a, TOL)
+            if flip_y:
+                _a = -_a
         elif xi == 6:
-            # 0zx -> xyz
+            # 0xz -> zyx
             # 0qp -> prq
             row[:n] = q
             row[n : 2 * n] = r
             row[2 * n :] = p
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_xyz(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_zyx(0, b, a, TOL)
+            _a, _b, _c = _convert_0xz_zyx(0, b, a, TOL)
+            if flip_y:
+                _b = -_b
         else:  # xi == 7
-            # 0zx -> xzy
+            # 0xz -> zxy
             # 0qp -> pqr
             row[:n] = r
             row[n : 2 * n] = q
             row[2 * n :] = p
-            if prod_parity == 0:
-                _a, _b, _c = _convert_0zx_xzy(0, b, a, TOL)
-            else:
-                _a, _b, _c = _convert_0xz_zxy(0, b, a, TOL)
+            _a, _b, _c = _convert_0xz_zxy(0, b, a, TOL)
+            if flip_y:
+                _c = -_c
     set_phase(row[:n], _c)
     set_phase(row[n : 2 * n], _b)
     set_phase(row[2 * n :], _a)

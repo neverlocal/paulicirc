@@ -174,5 +174,7 @@ cython_debug/
 .pypirc
 
 
-# Local test notebook
+# Local test/todo files
 /test.ipynb
+/test.py
+/TODO.md

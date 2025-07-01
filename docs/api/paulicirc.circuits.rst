@@ -9,7 +9,7 @@ Circuit
 .. autoclass:: paulicirc.circuits.Circuit
     :show-inheritance:
     :members:
-    :special-members: __new__, __getitem__, __setitem__
+    :special-members: __bytes__, __new__, __getitem__, __setitem__
 
 CircuitData
 -----------

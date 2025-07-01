@@ -348,6 +348,36 @@ class Circuit:
         )
         return cls(data, num_qubits)
 
+    @staticmethod
+    def from_bytes(bs: bytes) -> Circuit:
+        """
+        Deserializes a circuit from bytes.
+        See :meth:`Circuit.__bytes__` for discussion of the encoding.
+        """
+        if len(bs) <= 10:
+            raise ValueError("Circuit encodings are >= 18B.")
+        if bs[0] != 0x01:
+            raise ValueError("First byte must be 0x01.")
+        if bs[1] != 0x04:
+            raise NotImplementedError(
+                f"Phase dtype code 0x{bs[2]:0>2x} not implemented."
+                "The only phase dtype currently implemented is 0x04 for float64."
+            )
+        num_gadgets = int.from_bytes(bs[2:10], byteorder="big", signed=False)
+        num_qubits = int.from_bytes(bs[10:18], byteorder="big", signed=False)
+        if num_gadgets == 0:
+            return Circuit(zero_circ(num_gadgets, num_qubits), num_qubits)
+        data = np.frombuffer(memoryview(bs)[18:], dtype=np.uint8).reshape(
+            num_gadgets, -1
+        )
+        expected_ncols = PHASE_NBYTES - (-num_qubits // 4)
+        if data.shape[1] != expected_ncols:
+            raise ValueError(
+                f"Expected data of shape ({num_gadgets}, {expected_ncols})"
+                f", found data of shape {data.shape} instead."
+            )
+        return Circuit(data, num_qubits)
+
     _data: CircuitData
     _num_qubits: int
 
@@ -572,6 +602,28 @@ class Circuit:
             object.__sizeof__(self)
             + self._num_qubits.__sizeof__()
             + self._data.__sizeof__()
+        )
+
+    def __bytes__(self) -> bytes:
+        """
+        Serializes a circuit to bytes:
+
+        - 1B fixed to 0x01, to indicate a :class:`Circuit` encoding
+        - 1B encoding the circuit phase dtype (currently, fixed to 0x04 for float64)
+        - 8B encoding the number of gadgets, encoded as unsigned big endian
+        - 8B encoding the number of qubits, encoded as unsigned big endian
+        - the bytes of the underlying data array, using :meth:`numpy.ndarray.tobytes`
+
+        :meta public:
+        """
+        return b"".join(
+            [
+                b"\x01",  # 0x01 = Circuit
+                b"\x04",  # phase dtype = float64
+                self.num_gadgets.to_bytes(8, byteorder="big", signed=False),
+                self.num_qubits.to_bytes(8, byteorder="big", signed=False),
+                self._data.tobytes(),
+            ]
         )
 
     def to_qiskit(self) -> QiskitQuantumCircuit:

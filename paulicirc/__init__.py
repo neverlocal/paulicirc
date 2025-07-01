@@ -19,7 +19,7 @@ from .utils.options import options
 from .gadgets import Gadget
 from .circuits import Circuit
 from .builders import CircuitBuilder
-from .layers import Layer
+from .layers import Layer, LayeredCircuit
 
 __all__ = (
     "options",
@@ -27,5 +27,5 @@ __all__ = (
     "Layer",
     "Circuit",
     "CircuitBuilder",
-    # "LayeredCircuitBuilder",
+    "LayeredCircuit",
 )

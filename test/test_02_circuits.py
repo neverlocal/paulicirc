@@ -2,7 +2,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from paulicirc.utils.numpy import normalise_phase
+from paulicirc.utils.numpy import canonicalize_phase
 from paulicirc.circuits import Circuit
 from paulicirc.gadgets import Gadget, are_same_phase
 
@@ -292,7 +292,6 @@ NUM_QUBITS_RANGE = range(0, 9)
 #     assert np.allclose(u, v)
 
 
-
 def bit_reverse(i: int, n: int) -> int:
     return int(f"{i:0>{n}b}"[::-1], 2)
 
@@ -324,13 +323,11 @@ try:
         qiskit_circ = circ.to_qiskit()
 
         qiskit_unitary = reorder_qiskit_unitary(Operator(qiskit_circ).data)
-        normalise_phase(qiskit_unitary)
+        canonicalize_phase(qiskit_unitary)
         assert np.allclose(circ.unitary(), qiskit_unitary)
 
 except ModuleNotFoundError:
     pass
-
-
 
 
 ## This is a very intensive test, we only do it in selected occasions ##

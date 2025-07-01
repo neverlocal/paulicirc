@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 import paulicirc
-from paulicirc.utils.numpy import normalise_phase
+from paulicirc.utils.numpy import canonicalize_phase
 from paulicirc.gadgets import (
     PAULI_CHARS,
     PHASE_NBYTES,
@@ -283,13 +283,13 @@ def test_gadget_unitary(
 ) -> None:
     paulistr = "".join(PAULI_CHARS[leg] for leg in legs)
     g = Gadget.from_paulistr(paulistr, phase)
-    u = g.unitary(normalize_phase=_normalise_phase)
+    u = g.unitary(canonical_phase=_normalise_phase)
     gs = [Gadget.from_paulistr(paulistr, i * phase) for i in range(5)]
     v = np.eye(2**num_qubits, dtype=np.complex128)
     for i, g_i in enumerate(gs):
         u_i = g_i.unitary()
-        normalise_phase(u_i)
-        normalise_phase(v)
+        canonicalize_phase(u_i)
+        canonicalize_phase(v)
         assert u_i.shape == v.shape
         assert u_i.dtype == v.dtype
         assert np.allclose(u_i, v)
@@ -370,6 +370,6 @@ def test_gadget_commute_past(
         v = q.unitary() @ p.unitary()
     else:
         v = r.unitary() @ q.unitary() @ p.unitary()
-    normalise_phase(u)
-    normalise_phase(v)
+    canonicalize_phase(u)
+    canonicalize_phase(v)
     assert np.allclose(u, v)

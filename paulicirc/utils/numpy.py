@@ -25,6 +25,9 @@ import numba  # type: ignore
 BoolArray1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.bool_]]
 """Type alias for 1D bool NumPy arrays."""
 
+UIntArray1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.unsignedinteger[Any]]]
+"""Type alias for 1D uint NumPy arrays."""
+
 UInt8Array1D: TypeAlias = np.ndarray[tuple[int, ...], np.dtype[np.uint8]]
 """Type alias for 1D uint8 NumPy arrays."""
 
@@ -69,7 +72,7 @@ def numba_jit(func: Callable[_P, _R]) -> Callable[_P, _R]:
     return _numba_jit(func)  # type: ignore
 
 
-def normalise_phase(
+def canonicalize_phase(
     array: np.ndarray[ShapeT, np.dtype[np.complex128]],
     *,
     tol: float = 1e-8,

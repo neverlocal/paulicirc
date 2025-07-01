@@ -42,7 +42,8 @@ from .utils.numpy import (
     FloatArray1D,
     UInt8Array1D,
     UInt8Array2D,
-    normalise_phase,
+    UIntArray1D,
+    canonicalize_phase,
     numba_jit,
 )
 from .gadgets import (
@@ -50,8 +51,10 @@ from .gadgets import (
     PHASE_NBYTES,
     Gadget,
     PauliArray,
+    Phase,
     PhaseArray,
     PauliArray2D,
+    QubitIdxs,
     are_same_phases,
     decode_phases,
     encode_phases,
@@ -135,10 +138,35 @@ def set_circuit_legs(circ: CircuitData, legs: PauliArray2D) -> None:
     _, n = legs.shape
     leg_data = circ[:, :-PHASE_NBYTES]
     leg_data[:, :] = 0
-    leg_data[:, : -(-(n - 0) // 4)] |= legs[:, 0::4] << 6
-    leg_data[:, : -(-(n - 1) // 4)] |= legs[:, 1::4] << 4
-    leg_data[:, : -(-(n - 2) // 4)] |= legs[:, 2::4] << 2
+    leg_data[:, : -(-(n - 0) // 4)] |= legs[:, 0::4] << 6  # type: ignore
+    leg_data[:, : -(-(n - 1) // 4)] |= legs[:, 1::4] << 4  # type: ignore
+    leg_data[:, : -(-(n - 2) // 4)] |= legs[:, 2::4] << 2  # type: ignore
     leg_data[:, : -(-(n - 3) // 4)] |= legs[:, 3::4]
+
+
+@numba_jit
+def transversal_set_gadget_leg_at(
+    circ: CircuitData, p: int, qs: UIntArray1D, start: int, end: int
+) -> None:
+    """
+    Sets single leg data to the given circuit data, transversally over multiple
+    gadget indices and qubits.
+    """
+    _qs = np.array(qs, np.uint64)
+    shifts = 2 * (3 - _qs % 4)
+    idxs = np.arange(start, end)
+    circ[idxs, _qs // 4] &= 0b11111111 ^ (0b11 << shifts)
+    circ[idxs, _qs // 4] |= np.uint8(p) << shifts
+
+
+@numba_jit
+def transversal_set_phase(
+    circ: CircuitData, phase: Phase, start: int, end: int
+) -> None:
+    """Sets phase data, transversally over multiple gadget indices."""
+    circ[start:end, -PHASE_NBYTES:] = np.array(
+        [phase % (2 * np.pi)], dtype=np.float64
+    ).view(np.uint8)
 
 
 def commute_circuit(circ: CircuitData, codes: CommutationCodeArray) -> CircuitData:
@@ -158,6 +186,56 @@ def commute_circuit(circ: CircuitData, codes: CommutationCodeArray) -> CircuitDa
     reshaped_exp_circ = exp_circ.reshape(_m // 3, 3 * _n)
     np.apply_along_axis(commute_gadget_pair, 1, reshaped_exp_circ)
     return exp_circ[~np.all(exp_circ == 0, axis=1)]  # type: ignore
+
+
+def unitary_from_gadgets(
+    self: Iterable[Gadget],
+    num_qubits: int,
+    canonical_phase: bool = True,
+    _use_cupy: bool = False,  # currently in alpha
+) -> Complex128Array2D:
+    """Returns the unitary matrix associated to the given sequence of gadgets."""
+    res: Complex128Array2D = np.eye(2**num_qubits, dtype=np.complex128)
+    if _use_cupy:
+        import cupy as cp  # type: ignore[import-untyped]
+
+        res = cp.asarray(res)
+    for gadget in self:
+        gadget_u = gadget.unitary(canonical_phase=False)
+        if _use_cupy:
+            gadget_u = cp.asarray(res)
+        res = gadget_u @ res
+    if _use_cupy:
+        res = cp.asnumpy(res).astype(np.complex128)
+    if canonical_phase:
+        canonicalize_phase(res)
+    return res
+
+
+def statevec_from_gadgets(
+    self: Iterable[Gadget],
+    input: ComplexArray1D | FloatArray1D,
+    canonical_phase: bool = True,
+    _use_cupy: bool = False,  # currently in alpha
+) -> Complex128Array1D:
+    """
+    Computes the statevector resulting from the application of the given gadgets
+    to the given input statevector.
+    """
+    assert validate(input, ComplexArray1D | FloatArray1D)
+    res = input.astype(np.complex128)
+    if _use_cupy:
+        import cupy as cp
+
+        res = cp.asarray(res)
+    for gadget in self:
+        gadget_u = gadget.unitary(canonical_phase=False)
+        if _use_cupy:
+            gadget_u = cp.asarray(res)
+        res = gadget_u @ res
+    if canonical_phase:
+        canonicalize_phase(res)
+    return res
 
 
 @final
@@ -238,7 +316,7 @@ class Circuit:
         Constructs a circuit with the given number of gadgets and qubits,
         where all gadgets have no legs and zero phase.
         """
-        assert Circuit._validate_circ_shape(num_gadgets, num_qubits)
+        assert Circuit.__validate_circ_shape(num_gadgets, num_qubits)
         data = zero_circ(num_gadgets, num_qubits)
         return cls(data, num_qubits)
 
@@ -250,7 +328,7 @@ class Circuit:
         Constructs a circuit with the given number of gadgets and qubits,
         where all gadgets have random legs and random phase.
         """
-        assert Circuit._validate_circ_shape(num_gadgets, num_qubits)
+        assert Circuit.__validate_circ_shape(num_gadgets, num_qubits)
         if not isinstance(rng, RNG):
             rng = np.random.default_rng(rng)
         data = rand_circ(num_gadgets, num_qubits, rng=rng)
@@ -281,7 +359,7 @@ class Circuit:
 
         :meta public:
         """
-        assert Circuit._validate_new_args(data, num_qubits)
+        assert Circuit.__validate_new_args(data, num_qubits)
         if num_qubits is None:
             num_qubits = (data.shape[1] - PHASE_NBYTES) * 4
         self = super().__new__(cls)
@@ -320,7 +398,7 @@ class Circuit:
                 ],
                 dtype=PHASE_DTYPE,
             )
-        assert self._validate_phases_value(value)
+        assert self.__validate_phases_value(value)
         self._data[:, -PHASE_NBYTES:] = encode_phases(value)
 
     @property
@@ -334,12 +412,12 @@ class Circuit:
     ) -> None:
         """Sets the legs of the circuit."""
         if isinstance(value, np.ndarray):
-            assert self._validate_legs_value(value)
+            assert self.__validate_legs_value(value)
             set_circuit_legs(self._data, value)
         else:
             assert validate(value, Sequence[Any])
             for idx, line in enumerate(value):
-                self[idx].legs = line
+                self[idx].legs = line  # type: ignore
 
     @property
     def is_zero(self) -> bool:
@@ -376,7 +454,7 @@ class Circuit:
         and associated commutation code conventions.
         """
         codes = np.asarray(codes, dtype=np.uint8)
-        assert self._validate_commutation_codes(codes)
+        assert self.__validate_commutation_codes(codes)
         if len(self) == 0:
             return self.clone()
         return Circuit(commute_circuit(self._data, codes), self._num_qubits)
@@ -384,50 +462,23 @@ class Circuit:
     def unitary(
         self,
         *,
-        normalize_phase: bool = True,
+        canonical_phase: bool = True,
         _use_cupy: bool = False,  # currently in alpha
     ) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget circuit."""
-        res: Complex128Array2D = np.eye(2**self.num_qubits, dtype=np.complex128)
-        if _use_cupy:
-            import cupy as cp  # type: ignore[import-untyped]
-
-            res = cp.asarray(res)
-        for gadget in self:
-            gadget_u = gadget.unitary(normalize_phase=False)
-            if _use_cupy:
-                gadget_u = cp.asarray(res)
-            res = gadget_u @ res
-        if _use_cupy:
-            res = cp.asnumpy(res).astype(np.complex128)
-        if normalize_phase:
-            normalise_phase(res)
-        return res
+        return unitary_from_gadgets(self, self.num_qubits, canonical_phase, _use_cupy)
 
     def statevec(
         self,
         input: ComplexArray1D | FloatArray1D,
-        normalize_phase: bool = True,
+        canonical_phase: bool = True,
         _use_cupy: bool = False,  # currently in alpha
     ) -> Complex128Array1D:
         """
         Computes the statevector resulting from the application of this gadget circuit
         to the given input statevector.
         """
-        assert validate(input, ComplexArray1D | FloatArray1D)
-        res = input.astype(np.complex128)
-        if _use_cupy:
-            import cupy as cp
-
-            res = cp.asarray(res)
-        for gadget in self:
-            gadget_u = gadget.unitary(normalize_phase=False)
-            if _use_cupy:
-                gadget_u = cp.asarray(res)
-            res = gadget_u @ res
-        if normalize_phase:
-            normalise_phase(res)
-        return res
+        return statevec_from_gadgets(self, input, canonical_phase, _use_cupy)
 
     def iter_gadgets(
         self, *, start: int = 0, stop: int | None = None, fast: bool = False
@@ -491,7 +542,7 @@ class Circuit:
 
         :meta public:
         """
-        assert self._validate_setitem_args(idx, value)
+        assert self.__validate_setitem_args(idx, value)
         self._data[idx, :] = value._data  # type: ignore[index]
 
     def __len__(self) -> int:
@@ -541,7 +592,7 @@ class Circuit:
     if __debug__:
 
         @staticmethod
-        def _validate_circ_shape(num_gadgets: int, num_qubits: int) -> Literal[True]:
+        def __validate_circ_shape(num_gadgets: int, num_qubits: int) -> Literal[True]:
             """Validates the shape of a circuit."""
             validate(num_gadgets, SupportsIndex)
             validate(num_qubits, SupportsIndex)
@@ -554,7 +605,7 @@ class Circuit:
             return True
 
         @staticmethod
-        def _validate_new_args(
+        def __validate_new_args(
             data: CircuitData, num_qubits: int | None
         ) -> Literal[True]:
             """Validates the arguments of the :meth:`__new__` method."""
@@ -568,7 +619,23 @@ class Circuit:
                     raise ValueError("Number of qubits exceeds circuit width.")
             return True
 
-        def _validate_setitem_args(
+        @staticmethod
+        def __validate_gadgets(
+            gadgets: Sequence[Gadget], num_qubits: int | None
+        ) -> Literal[True]:
+            validate(gadgets, Sequence[Gadget])
+            if num_qubits is None:
+                if not gadgets:
+                    raise ValueError(
+                        "At least one gadget must be supplied if num_qubits is omitted."
+                    )
+                num_qubits = gadgets[0].num_qubits
+            for gadget in gadgets:
+                if gadget.num_qubits != num_qubits:
+                    raise ValueError("All gadgets must have the same number of qubits.")
+            return True
+
+        def __validate_setitem_args(
             self,
             idx: SupportsIndex | slice | list[SupportsIndex],
             value: Gadget | Circuit,
@@ -592,21 +659,21 @@ class Circuit:
                 )
             return True
 
-        def _validate_phases_value(self, value: PhaseArray) -> Literal[True]:
+        def __validate_phases_value(self, value: PhaseArray) -> Literal[True]:
             """Validates the value of the :attr:`phases` property."""
             validate(value, PhaseArray)
             if len(value) != self.num_gadgets:
                 raise ValueError("Number of phases does not match number of gadgets.")
             return True
 
-        def _validate_legs_value(self, legs: PauliArray2D) -> Literal[True]:
+        def __validate_legs_value(self, legs: PauliArray2D) -> Literal[True]:
             """Validates the value of the :attr:`legs` property."""
             validate(legs, PauliArray2D)
             if legs.shape != (self.num_gadgets, self.num_qubits):
                 raise ValueError("Shape of legs does not match shape of circuit.")
             return True
 
-        def _validate_commutation_codes(
+        def __validate_commutation_codes(
             self, codes: CommutationCodeArray
         ) -> Literal[True]:
             """Validates commutation codes passed to :meth:`commute`."""
@@ -617,20 +684,4 @@ class Circuit:
                 )
             if np.any(codes >= 8):
                 raise ValueError("Communication codes must be in range(8).")
-            return True
-
-        @staticmethod
-        def __validate_gadgets(
-            gadgets: Sequence[Gadget], num_qubits: int | None
-        ) -> Literal[True]:
-            validate(gadgets, Sequence[Gadget])
-            if num_qubits is None:
-                if not gadgets:
-                    raise ValueError(
-                        "At least one gadget must be supplied if num_qubits is omitted."
-                    )
-                num_qubits = gadgets[0].num_qubits
-            for gadget in gadgets:
-                if gadget.num_qubits != num_qubits:
-                    raise ValueError("All gadgets must have the same number of qubits.")
             return True

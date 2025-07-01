@@ -41,7 +41,8 @@ from .utils.numpy import (
     FloatArray1D,
     UInt8Array1D,
     UInt8Array2D,
-    normalise_phase,
+    UIntArray1D,
+    canonicalize_phase,
     numba_jit,
 )
 
@@ -126,7 +127,7 @@ PhaseArray: TypeAlias = FloatArray1D
 QubitIdx: TypeAlias = int
 """Type alias for the index of a qubit."""
 
-QubitIdxs: TypeAlias = Sequence[QubitIdx]
+QubitIdxs: TypeAlias = Sequence[QubitIdx] | UIntArray1D
 """Type alias for a sequence of indexes of qubits."""
 
 
@@ -141,7 +142,7 @@ def broadcast_idxs(*idxs_seq: QubitIdx | QubitIdxs) -> tuple[QubitIdxs, ...]:
     if not idxs_seq:
         return ()
     _idxs_seq: tuple[tuple[QubitIdx, ...], ...] = tuple(
-        (idxs,) if isinstance(idxs, QubitIdx) else tuple(idxs) for idxs in idxs_seq
+        (idxs,) if isinstance(idxs, QubitIdx) else tuple(idxs) for idxs in idxs_seq  # type: ignore
     )
     if any(not idxs for idxs in _idxs_seq):
         return ((),) * len(_idxs_seq)
@@ -167,13 +168,6 @@ def gadget_data_len(num_qubits: int) -> int:
 def zero_gadget_data(num_qubits: int) -> GadgetData:
     """Returns blank data for a gadget with the given number of qubits."""
     return np.zeros(-(-num_qubits // 4) + PHASE_NBYTES, dtype=np.uint8)
-
-
-# _LEG_BYTE_SHIFTS = np.arange(6, -1, -2, dtype=np.uint8)
-# """Bit shifts ``[6, 4, 2, 0]`` used on a byte to extract leg information."""
-
-# _LEG_BYTE_MASKS = 0b11 * np.ones(4, dtype=np.uint8)
-# """Byte mask used on a byte to extract leg information."""
 
 
 @numba_jit
@@ -206,6 +200,35 @@ def set_gadget_legs(g: GadgetData, legs: PauliArray) -> None:
     leg_data[: -(-(n - 1) // 4)] |= legs[1::4] << 4  # type: ignore # ok in Numpy 2.3
     leg_data[: -(-(n - 2) // 4)] |= legs[2::4] << 2  # type: ignore # ok in Numpy 2.3
     leg_data[: -(-(n - 3) // 4)] |= legs[3::4]
+
+
+@numba_jit
+def get_gadget_leg_at(g: GadgetData, q: int | np.unsignedinteger[Any]) -> Pauli:
+    """Extracts single leg data from the given gadget data."""
+    return (g[q // 4] >> 2 * (3 - q % 4)) & 0b11  # type: ignore
+
+
+@numba_jit
+def get_gadget_legs_at(g: GadgetData, q: UIntArray1D) -> PauliArray:
+    """Extracts multiple leg data from the given gadget data."""
+    return (g[q // 4] >> 2 * (3 - q % 4)) & 0b11  # type: ignore
+
+
+@numba_jit
+def set_gadget_leg_at(
+    g: GadgetData, p: int | np.unsignedinteger[Any], q: int | np.unsignedinteger[Any]
+) -> None:
+    """Sets single leg data from the given gadget data."""
+    _q = np.uint64(q)
+    shift = 2 * (3 - _q % 4)
+    g[_q // 4] &= 0b11111111 ^ (0b11 << shift)
+    g[_q // 4] |= np.uint8(p) << shift
+
+
+@numba_jit
+def set_gadget_legs_at(g: GadgetData, ps: PauliArray, qs: UIntArray1D) -> None:
+    for p, q in zip(ps, qs):
+        set_gadget_leg_at(g, p, q)
 
 
 @numba_jit
@@ -462,7 +485,7 @@ class Gadget:
     @staticmethod
     def legs_from_paulistr(paulistr: str) -> PauliArray:
         """Returns the legs corresponding to the given paulistr."""
-        assert Gadget._validate_paulistr(paulistr)
+        assert Gadget.__validate_paulistr(paulistr)
         return np.fromiter((PAULI_CHARS.index(p) for p in paulistr), dtype=np.uint8)
 
     @staticmethod
@@ -474,10 +497,10 @@ class Gadget:
         """Returns the legs corresponding to the given sparse paulistr."""
         if isinstance(qubits, QubitIdx):
             qubits = (qubits,)
-        assert Gadget._validate_sparse_paulistr(paulistr, qubits, num_qubits)
+        assert Gadget.__validate_sparse_paulistr(paulistr, qubits, num_qubits)
         legs = np.zeros(num_qubits, dtype=np.uint8)
         for idx, p in zip(qubits, paulistr):
-            legs[idx] = PAULI_CHARS.index(p)
+            legs[idx] = PAULI_CHARS.index(p)  # type: ignore
         return legs
 
     @classmethod
@@ -540,7 +563,7 @@ class Gadget:
         _ephemeral: bool = False,
     ) -> Self:
         """Constructs a Pauli gadget from the given data."""
-        assert Gadget._validate_new_args(data, num_qubits)
+        assert Gadget.__validate_new_args(data, num_qubits)
         if num_qubits is None:
             num_qubits = (data.shape[0] - PHASE_NBYTES) * 4
         self = super().__new__(cls)
@@ -567,7 +590,7 @@ class Gadget:
             legs = Gadget.legs_from_paulistr(value)
         else:
             legs = np.asarray(value, dtype=np.uint8)
-        assert self._validate_legs_self(legs)
+        assert self.__validate_legs_self(legs)
         set_gadget_legs(self._data, legs)
 
     @property
@@ -635,7 +658,7 @@ class Gadget:
         gadget, computed as the number of qubits where the legs of the two gadgets
         differ and are both not the identity Pauli (the value 0, as a :obj:`Pauli`).
         """
-        assert self._validate_same_num_qubits(other)
+        assert self.__validate_same_num_qubits(other)
         return gadget_overlap(self._data, other._data)
 
     def commutes_with(self, other: Gadget) -> bool:
@@ -724,7 +747,7 @@ class Gadget:
             Gadget(row[2 * n :], num_qubits),
         )
 
-    def unitary(self, *, normalize_phase: bool = True) -> Complex128Array2D:
+    def unitary(self, *, canonical_phase: bool = True) -> Complex128Array2D:
         """Returns the unitary matrix associated to this Pauli gadget."""
         legs = self.legs
         if len(legs) == 0:
@@ -733,21 +756,21 @@ class Gadget:
         for leg in legs[1:]:
             kron_prod = np.kron(kron_prod, PAULI_MATS[leg])
         res: Complex128Array2D = expm(-0.5j * self.phase * kron_prod)
-        if normalize_phase:
-            normalise_phase(res)
+        if canonical_phase:
+            canonicalize_phase(res)
         return res
 
     def statevec(
-        self, input: ComplexArray1D | FloatArray1D, normalize_phase: bool = False
+        self, input: ComplexArray1D | FloatArray1D, canonical_phase: bool = False
     ) -> Complex128Array1D:
         """
         Computes the statevector resulting from the application of this gadget
         to the given input statevector.
         """
         assert validate(input, ComplexArray1D | FloatArray1D)
-        res = self.unitary(normalize_phase=False) @ input.astype(np.complex128)
-        if normalize_phase:
-            normalise_phase(res)
+        res = self.unitary(canonical_phase=False) @ input.astype(np.complex128)
+        if canonical_phase:
+            canonicalize_phase(res)
         return res
 
     def clone(self) -> Self:
@@ -781,7 +804,7 @@ class Gadget:
     if __debug__:
 
         @staticmethod
-        def _validate_paulistr(paulistr: str) -> Literal[True]:
+        def __validate_paulistr(paulistr: str) -> Literal[True]:
             """Validates a given Paulistring."""
             validate(paulistr, str)
             if not all(p in PAULI_CHARS for p in paulistr):
@@ -789,11 +812,11 @@ class Gadget:
             return True
 
         @staticmethod
-        def _validate_sparse_paulistr(
+        def __validate_sparse_paulistr(
             paulistr: str, qubits: QubitIdxs, num_qubits: int
         ) -> Literal[True]:
             """Validates a given Paulistring."""
-            Gadget._validate_paulistr(paulistr)
+            Gadget.__validate_paulistr(paulistr)
             validate(qubits, QubitIdxs)
             validate(num_qubits, int)
             if num_qubits < 0:
@@ -809,7 +832,7 @@ class Gadget:
             return True
 
         @staticmethod
-        def _validate_new_args(
+        def __validate_new_args(
             data: GadgetData, num_qubits: int | None
         ) -> Literal[True]:
             """Validates the arguments of the :meth:`__new__` method."""
@@ -836,252 +859,15 @@ class Gadget:
                 raise ValueError("Leg values must be in range(4).")
             return True
 
-        def _validate_legs_self(self, legs: PauliArray) -> Literal[True]:
+        def __validate_legs_self(self, legs: PauliArray) -> Literal[True]:
             """Validates the value of the :attr:`legs` property."""
             Gadget._validate_legs(legs)
             if len(legs) != self.num_qubits:
                 raise ValueError("Number of legs does not match number of qubits.")
             return True
 
-        def _validate_same_num_qubits(self, gadget: Gadget) -> Literal[True]:
+        def __validate_same_num_qubits(self, gadget: Gadget) -> Literal[True]:
             validate(gadget, Gadget)
             if self.num_qubits != gadget.num_qubits:
                 raise ValueError("Mismatch in number of qubits between gadgets.")
-            return True
-
-
-class Layer:
-    """A layer of Pauli gadgets with compatible legs."""
-
-    @staticmethod
-    def _subset_to_indicator(qubits: Iterable[int]) -> int:
-        """Converts a collection of non-negative integers to the subset indicator."""
-        ind = 0
-        for i in qubits:
-            ind |= 1 << i
-        return ind
-
-    @staticmethod
-    def _selected_legs_to_subset(legs: PauliArray) -> int:
-        """Convert legs to a subset index."""
-        return Layer._subset_to_indicator(i for i, leg in enumerate(legs) if leg != 0)
-
-    @staticmethod
-    def _select_leg_subset(subset: int, legs: PauliArray) -> PauliArray:
-        """Selects a subset of legs based on the given subset indicator."""
-        return np.where(
-            np.fromiter((subset & (1 << x) for x in range(len(legs))), dtype=np.bool_),
-            legs,
-            0,
-        )
-
-    @staticmethod
-    def select_leg_subset(qubits: Iterable[int], legs: PauliArray) -> PauliArray:
-        """Selects legs based on the given subset of qubits."""
-        return Layer._select_leg_subset(Layer._subset_to_indicator(qubits), legs)
-
-    @classmethod
-    def from_gadgets(
-        cls, gadgets: Iterable[Gadget], num_qubits: int | None = None
-    ) -> Self:
-        """Constructs a layer from the given gadgets."""
-        gadgets = list(gadgets)
-        assert Layer.__validate_gadgets(gadgets, num_qubits)
-        if num_qubits is None:
-            num_qubits = gadgets[0].num_qubits
-        self = cls(num_qubits)
-        for gadget in gadgets:
-            success = self.add_gadget(gadget)
-            if not success:
-                raise ValueError("Given gadgets do not form a single layer.")
-        return self
-
-    _phases: dict[int, Phase]
-    _legs: PauliArray
-    _leg_count: np.ndarray[tuple[int], np.dtype[np.uint32]]
-    # FIXME: remove limit to 2**32 gadgets per layer
-
-    __slots__ = ("__weakref__", "_phases", "_legs", "_leg_count")
-
-    def __new__(cls, num_qubits: int) -> Self:
-        """
-        Create an empty Pauli layer with the given number of qubits.
-
-        :meta public:
-        """
-        assert Layer._validate_new_args(num_qubits)
-        self = super().__new__(cls)
-        self._phases = {}
-        self._legs = np.zeros(num_qubits, dtype=np.uint8)
-        self._leg_count = np.zeros(num_qubits, dtype=np.uint32)
-        return self
-
-    @property
-    def num_qubits(self) -> int:
-        """Number of qubits for the Pauli layer."""
-        return len(self._legs)
-
-    @property
-    def legs(self) -> PauliArray:
-        """Legs of the Pauli layer."""
-        view = self._legs.view()
-        view.setflags(write=False)
-        return view.view()
-
-    @property
-    def leg_paulistr(self) -> str:
-        """Paulistring representation of the layer's legs."""
-        return "".join(PAULI_CHARS[int(p)] for p in self.legs)
-
-    def phase(self, legs: PauliArray) -> Phase:
-        """
-        Get the phase of the given legs in the layer, or :obj:`None` if the legs
-        are incompatible with the layer.
-        """
-        if not self.is_compatible_with(legs):
-            raise ValueError("Selected legs are incompatible with layer.")
-        return self._phases.get(Layer._selected_legs_to_subset(legs), 0)
-
-    @overload
-    def is_compatible_with(self, legs: PauliArray, /) -> bool: ...
-
-    @overload
-    def is_compatible_with(self, gadget: Gadget, /) -> bool: ...
-
-    def is_compatible_with(self, legs: PauliArray | Gadget, /) -> bool:
-        """Check if the legs are compatible with the current layer."""
-        if isinstance(legs, Gadget):
-            legs = legs.legs
-        assert self._validate_legs_self(legs)
-        self_legs = self._legs
-        return bool(np.all((self_legs == legs) | (self_legs == 0) | (legs == 0)))
-
-    @overload
-    def commutes_with(self, legs: PauliArray, /) -> bool: ...
-
-    @overload
-    def commutes_with(self, gadget: Gadget, /) -> bool: ...
-
-    def commutes_with(self, legs: PauliArray | Gadget, /) -> bool:
-        """Check if the legs commute with the current layer."""
-        if isinstance(legs, Gadget):
-            legs = legs.legs
-        assert self._validate_legs_self(legs)
-        self_legs = self._legs
-        for subset in self._phases:
-            subset_legs = Layer._select_leg_subset(subset, self_legs)
-            ovlp = sum((subset_legs != legs) & (legs != 0) & (subset_legs != 0))
-            if ovlp % 2 != 0:
-                return False
-        return True
-
-    @overload
-    def add_gadget(self, gadget: Gadget, /) -> bool: ...
-
-    @overload
-    def add_gadget(self, legs: PauliArray, phase: Phase, /) -> bool: ...
-
-    def add_gadget(
-        self, gadget_or_legs: PauliArray | Gadget, phase: Phase | None = None
-    ) -> bool:
-        """Add a gadget to the layer."""
-        if isinstance(gadget_or_legs, Gadget):
-            legs = gadget_or_legs.legs
-            phase = gadget_or_legs.phase
-        else:
-            legs = gadget_or_legs
-            assert phase is not None
-        if not self.is_compatible_with(legs):
-            return False
-        phases = self._phases
-        subset = Layer._selected_legs_to_subset(legs)
-        if subset in phases:
-            if are_same_phase(curr_phase := phases[subset], -phase):
-                del phases[subset]
-                self._leg_count -= np.where(legs == 0, np.uint32(0), np.uint32(1))
-                self._legs = np.where(self._leg_count == 0, 0, self._legs)
-            else:
-                phases[subset] = (curr_phase + phase) % (2 * np.pi)
-            return True
-        phases[subset] = phase
-        self._leg_count += np.where(legs == 0, np.uint32(0), np.uint32(1))
-        self._legs = np.where(legs == 0, self._legs, legs)
-        return True
-
-    def __iter__(self) -> Iterator[Gadget]:
-        """
-        Iterates over the gadgets in the layer, in insertion order.
-
-        :meta public:
-        """
-        legs, num_qubits = self._legs, self.num_qubits
-        for subset, phase in self._phases.items():
-            subset_legs = Layer._select_leg_subset(subset, legs)
-            yield Gadget(Gadget.assemble_data(subset_legs, phase), num_qubits)
-
-    def __len__(self) -> int:
-        """The number of gadgets (with non-zero phase) in this layer."""
-        return len(self._phases)
-
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, Layer):
-            return NotImplemented
-        print(self._phases)
-        print(other._phases)
-        return (
-            self.num_qubits == other.num_qubits
-            and np.array_equal(self._legs, other._legs)
-            and self._phases == other._phases
-        )
-
-    def __repr__(self) -> str:
-        legs_str = self.leg_paulistr
-        if len(legs_str) > 16:
-            legs_str = legs_str[:8] + "..." + legs_str[-8:]
-        return f"<Layer: {legs_str}, {len(self)} gadgets>"
-
-    def __sizeof__(self) -> int:
-        return (
-            object.__sizeof__(self)
-            + self._phases.__sizeof__()
-            + sum(
-                key.__sizeof__() + value.__sizeof__()
-                for key, value in self._phases.items()
-            )
-            + self._legs.__sizeof__()
-            + self._leg_count.__sizeof__()
-        )
-
-    if __debug__:
-
-        @staticmethod
-        def _validate_new_args(num_qubits: int) -> Literal[True]:
-            """Validate arguments to the :meth:`__new__` method."""
-            validate(num_qubits, SupportsIndex)
-            num_qubits = int(num_qubits)
-            if num_qubits < 0:
-                raise ValueError("Number of qubits must be non-negative.")
-            return True
-
-        def _validate_legs_self(self, legs: PauliArray) -> Literal[True]:
-            """Validates the value of the :attr:`legs` property."""
-            Gadget._validate_legs(legs)
-            if len(legs) != self.num_qubits:
-                raise ValueError("Number of legs does not match number of qubits.")
-            return True
-
-        @staticmethod
-        def __validate_gadgets(
-            gadgets: Sequence[Gadget], num_qubits: int | None
-        ) -> Literal[True]:
-            validate(gadgets, Sequence[Gadget])
-            if num_qubits is None:
-                if not gadgets:
-                    raise ValueError(
-                        "At least one gadget must be supplied if num_qubits is omitted."
-                    )
-                num_qubits = gadgets[0].num_qubits
-            for gadget in gadgets:
-                if gadget.num_qubits != num_qubits:
-                    raise ValueError("All gadgets must have the same number of qubits.")
             return True

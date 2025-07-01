@@ -443,7 +443,7 @@ class Gadget:
         r"""
         Converts a phase to a fraction of :math:`\pi`.
         The number of bits of precision is controlled by the value
-        of :attr:`options.display_prec <paulicirc.utils.PauliCircOptions.display_prec>`:
+        of :attr:`options.display_prec <paulicirc.utils.options.PauliCircOptions.display_prec>`:
         this is set to 8 by default, corresponding to multiples of :math:`\pi/256`.
         """
         from .utils.options import options

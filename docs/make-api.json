@@ -10,7 +10,7 @@
         ]
     },
     "type_aliases": {
-        "paulicirc._numpy": [
+        "paulicirc.utils.numpy": [
             "BoolArray1D",
             "UInt8Array1D",
             "UInt16Array1D",

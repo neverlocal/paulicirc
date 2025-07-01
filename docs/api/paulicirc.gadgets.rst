@@ -22,14 +22,6 @@ GadgetData
 
 .. autodata:: paulicirc.gadgets.GadgetData
 
-Layer
------
-
-.. autoclass:: paulicirc.gadgets.Layer
-    :show-inheritance:
-    :members:
-    :special-members: __new__
-
 PAULI_CHARS
 -----------
 
@@ -99,11 +91,6 @@ QubitIdxs
 
 .. autodata:: paulicirc.gadgets.QubitIdxs
 
-_GadgetDataTriple
------------------
-
-.. autodata:: paulicirc.gadgets._GadgetDataTriple
-
 are_same_phase
 --------------
 
@@ -144,10 +131,20 @@ gadget_overlap
 
 .. autodata:: paulicirc.gadgets.gadget_overlap
 
+get_gadget_leg_at
+-----------------
+
+.. autodata:: paulicirc.gadgets.get_gadget_leg_at
+
 get_gadget_legs
 ---------------
 
 .. autodata:: paulicirc.gadgets.get_gadget_legs
+
+get_gadget_legs_at
+------------------
+
+.. autodata:: paulicirc.gadgets.get_gadget_legs_at
 
 get_phase
 ---------
@@ -164,15 +161,25 @@ is_zero_phase
 
 .. autodata:: paulicirc.gadgets.is_zero_phase
 
-pauli_product_parity
---------------------
+pauli_product_phase
+-------------------
 
-.. autodata:: paulicirc.gadgets.pauli_product_parity
+.. autodata:: paulicirc.gadgets.pauli_product_phase
+
+set_gadget_leg_at
+-----------------
+
+.. autodata:: paulicirc.gadgets.set_gadget_leg_at
 
 set_gadget_legs
 ---------------
 
 .. autofunction:: paulicirc.gadgets.set_gadget_legs
+
+set_gadget_legs_at
+------------------
+
+.. autodata:: paulicirc.gadgets.set_gadget_legs_at
 
 set_phase
 ---------

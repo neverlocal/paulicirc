@@ -39,10 +39,10 @@ TYPE_CHECKING
 
 .. autodata:: paulicirc.circuits.TYPE_CHECKING
 
-commute
--------
+commute_circuit
+---------------
 
-.. autofunction:: paulicirc.circuits.commute
+.. autofunction:: paulicirc.circuits.commute_circuit
 
 get_circuit_legs
 ----------------
@@ -58,6 +58,26 @@ set_circuit_legs
 ----------------
 
 .. autofunction:: paulicirc.circuits.set_circuit_legs
+
+statevec_from_gadgets
+---------------------
+
+.. autofunction:: paulicirc.circuits.statevec_from_gadgets
+
+transversal_set_gadget_leg_at
+-----------------------------
+
+.. autodata:: paulicirc.circuits.transversal_set_gadget_leg_at
+
+transversal_set_phase
+---------------------
+
+.. autodata:: paulicirc.circuits.transversal_set_phase
+
+unitary_from_gadgets
+--------------------
+
+.. autofunction:: paulicirc.circuits.unitary_from_gadgets
 
 zero_circ
 ---------

@@ -185,7 +185,9 @@ def test_single_gate_layer(
     layered_circ.extend(builder)
     assert layered_circ.num_qubits == num_qubits
     assert layered_circ.num_layers == len(layers)
-    for idx, (layer, layered_circ_layer) in enumerate(zip(layers, layered_circ._layers)):
+    for idx, (layer, layered_circ_layer) in enumerate(
+        zip(layers, layered_circ._layers)
+    ):
         assert layer == layered_circ_layer, (
             idx,
             layer,

@@ -27,7 +27,13 @@ from typing import (
 import numpy as np
 from .gadgets import PAULI_CHARS, Gadget, PauliArray, Phase, are_same_phase
 from .circuits import Circuit, statevec_from_gadgets, unitary_from_gadgets
-from .utils.numpy import RNG, Complex128Array1D, Complex128Array2D, ComplexArray1D, FloatArray1D, canonicalize_phase
+from .utils.numpy import (
+    RNG,
+    Complex128Array1D,
+    Complex128Array2D,
+    ComplexArray1D,
+    FloatArray1D,
+)
 
 if __debug__:
     from typing_validation import validate
@@ -371,7 +377,6 @@ class LayeredCircuit:
         to the given input statevector.
         """
         return statevec_from_gadgets(self, input, canonical_phase, _use_cupy)
-
 
     def __iter__(self) -> Iterator[Gadget]:
         for layer in self._layers:
